@@ -62,6 +62,17 @@ public:
   void OnViewDestroyed() override;
   void DrawResize() override;
 
+  /** FIERCE (SHARP_RENDER_PLAN.md Phase 5): LCD / ClearType text. When on, the offscreen
+   * surface is created with kRGB_H pixel geometry and unrotated text at an INTEGER total
+   * scale is drawn with SkFont::Edging::kSubpixelAntiAlias; everything else stays grayscale.
+   * On Windows the request is further gated on the system's own font smoothing being
+   * ClearType (SPI_GETFONTSMOOTHINGTYPE), because on any other panel arrangement the
+   * colour fringes are simply wrong. Recreates the surface, so call it from the UI thread. */
+  void SetLCDText(bool on);
+  bool GetLCDText() const { return mLCDText; }
+  // Adopters test this to know the patch is present (FierceCommon/tools/iplug2-sharp-render.patch).
+#define IPLUG_SKIA_LCD_TEXT 1
+
   void DrawBitmap(const IBitmap& bitmap, const IRECT& dest, int srcX, int srcY, const IBlend* pBlend) override;
 
   void PathClear() override { mMainPath.reset(); }
@@ -149,6 +160,7 @@ private:
     
   sk_sp<SkSurface> mSurface;
   SkCanvas* mCanvas = nullptr;
+  bool mLCDText = false;
   SkPath mMainPath;
   SkMatrix mMatrix;
   SkMatrix mClipMatrix;

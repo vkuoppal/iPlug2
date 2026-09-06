@@ -52,6 +52,7 @@
   #include "include/ports/SkFontMgr_mac_ct.h"
 
 #elif defined OS_WIN
+  #include <windows.h>
   #include "include/ports/SkTypeface_win.h"
 
   #pragma comment(lib, "skia.lib")
@@ -464,7 +465,10 @@ void IGraphicsSkia::DrawResize()
   if (mGrContext.get())
   {
     SkImageInfo info = SkImageInfo::MakeN32Premul(w, h);
-    mSurface = SkSurfaces::RenderTarget(mGrContext.get(), skgpu::Budgeted::kYes, info);
+    // FIERCE (SHARP_RENDER_PLAN.md Phase 5): kRGB_H geometry is what lets kSubpixelAntiAlias
+    // actually produce LCD text; with kUnknown Skia silently averages the mask to grey.
+    const SkSurfaceProps props(0, mLCDText ? kRGB_H_SkPixelGeometry : kUnknown_SkPixelGeometry);
+    mSurface = SkSurfaces::RenderTarget(mGrContext.get(), skgpu::Budgeted::kYes, info, 0, kBottomLeft_GrSurfaceOrigin, &props);
   }
 #else
   #ifdef OS_WIN
@@ -494,6 +498,32 @@ void IGraphicsSkia::DrawResize()
     mCanvas = mSurface->getCanvas();
     mCanvas->save();
   }
+}
+
+void IGraphicsSkia::SetLCDText(bool on)
+{
+#if defined OS_WIN
+  if (on)
+  {
+    // Only where the OS itself renders ClearType: on grayscale-smoothing systems, or with
+    // smoothing off, the fringes have no panel to be right on.
+    UINT type = 0;
+    BOOL smooth = FALSE;
+    SystemParametersInfo(SPI_GETFONTSMOOTHING, 0, &smooth, 0);
+    SystemParametersInfo(SPI_GETFONTSMOOTHINGTYPE, 0, &type, 0);
+    on = smooth && type == FE_FONTSMOOTHINGCLEARTYPE;
+  }
+#else
+  on = false;   // Retina / non-Windows: nothing to gain, fringes to lose.
+#endif
+  if (on == mLCDText)
+    return;
+  mLCDText = on;
+#if defined IGRAPHICS_GL || defined IGRAPHICS_METAL
+  if (mGrContext.get())
+    DrawResize();   // the geometry lives on the surface, so the surface is remade
+#endif
+  SetAllControlsDirty();
 }
 
 void IGraphicsSkia::BeginFrame()
@@ -696,9 +726,21 @@ void IGraphicsSkia::PrepareAndMeasureText(const IText& text, const char* str, IR
   assert(pFont && "No font found - did you forget to load it?");
 
   font.setTypeface(pFont->mTypeface);
+  // FIERCE (SHARP_RENDER_PLAN.md Phase 1): grayscale AA rather than kSubpixelAntiAlias.
+  // On a surface with no pixel geometry Skia cannot do LCD text, so it rasterises
+  // a ClearType 3x1 mask and AVERAGES it to grey - neither ClearType nor real
+  // grayscale, and visibly softer than DirectWrite's own GRAYSCALE mode. And at an
+  // integer total scale (100 % / 200 %) glyph origins go on whole pixels, so every
+  // stem rasterises in the same phase; at 1.25 / 1.5 subpixel positioning stays on.
+  // Measured on a 96-DPI panel: same ink in fewer, brighter pixels (493/105 -> 463/113).
+  const float ts = GetTotalScale();
+  const bool integerScale = std::fabs(ts - std::round(ts)) < 0.001f;
+  // Phase 5: LCD only where its fringes are right - an integer scale, no rotation.
+  const bool lcd = mLCDText && integerScale && text.mAngle == 0.f;
+  font.setEdging(lcd ? SkFont::Edging::kSubpixelAntiAlias : SkFont::Edging::kAntiAlias);
   font.setHinting(SkFontHinting::kSlight);
   font.setForceAutoHinting(false);
-  font.setSubpixel(true);
+  font.setSubpixel(!integerScale);
   font.setSize(text.mSize * pFont->mData->GetHeightEMRatio());
   
   // Draw / measure
@@ -729,7 +771,6 @@ void IGraphicsSkia::PrepareAndMeasureText(const IText& text, const char* str, IR
 float IGraphicsSkia::DoMeasureText(const IText& text, const char* str, IRECT& bounds) const
 {
   SkFont font;
-  font.setEdging(SkFont::Edging::kSubpixelAntiAlias);
 
   IRECT r = bounds;
   double x, y;
@@ -743,7 +784,6 @@ void IGraphicsSkia::DoDrawText(const IText& text, const char* str, const IRECT& 
   IRECT measured = bounds;
   
   SkFont font;
-  font.setEdging(SkFont::Edging::kSubpixelAntiAlias);
 
   double x, y;
 
