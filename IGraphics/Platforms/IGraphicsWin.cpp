@@ -76,6 +76,7 @@ inline IMouseInfo IGraphicsWin::GetMouseInfo(LPARAM lParam, WPARAM wParam)
     GetKeyState(VK_MENU) < 0
 #endif
   );
+  info.ms.M = (wParam & MK_MBUTTON) != 0;
 
   return info;
 }
@@ -309,7 +310,11 @@ LRESULT CALLBACK IGraphicsWin::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARA
       if (IsTouchEvent())
         return 0;
 
-      if (!(wParam & (MK_LBUTTON | MK_RBUTTON)))
+      // MK_MBUTTON belongs in this mask as much as the other two. The middle
+      // button IS a drag button - pan, in every 3D tool ever made - and leaving
+      // it out meant a middle press sent a mouse down and then nothing at all,
+      // because every move that followed it went to the hover branch instead.
+      if (!(wParam & (MK_LBUTTON | MK_RBUTTON | MK_MBUTTON)))
       {
         IMouseInfo info = pGraphics->GetMouseInfo(lParam, wParam);
         if (pGraphics->OnMouseOver(info.x, info.y, info.ms))
@@ -371,6 +376,10 @@ LRESULT CALLBACK IGraphicsWin::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARA
     }
     case WM_LBUTTONUP:
     case WM_RBUTTONUP:
+    // WM_MBUTTONUP was missing entirely, and the down had already called
+    // SetCapture - so a middle click anywhere left the window holding the mouse
+    // with nothing on its way to release it.
+    case WM_MBUTTONUP:
     {
       ReleaseCapture();
       IMouseInfo info = pGraphics->GetMouseInfo(lParam, wParam);

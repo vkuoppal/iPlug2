@@ -86,6 +86,14 @@ public:
    * @param mod A struct indicating which modifier keys are held for the event */
   virtual void OnMouseDown(float x, float y, const IMouseMod& mod);
 
+  /** Override and return \c true to receive MIDDLE (scroll wheel) button
+   * events, which arrive as ordinary down/drag/up with IMouseMod::M set.
+   * Default false, and that default is the point: without opting in a middle
+   * press is dropped before it can capture anything, so no knob written before
+   * the button existed can be middle dragged by a hand that meant to pan.
+   * @return \c true if this control handles the middle button */
+  virtual bool WantsMiddleMouse() const { return false; }
+
 /** Implement this method to respond to a mouse up event on this control. 
    * @param x The X coordinate of the mouse event
    * @param y The Y coordinate of the mouse event

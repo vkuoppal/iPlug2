@@ -1001,6 +1001,19 @@ void IGraphics::OnMouseDown(const std::vector<IMouseInfo>& points)
     float y = point.y;
     const IMouseMod& mod = point.ms;
     
+    // THE MIDDLE BUTTON IS OPT-IN, and it has to be answered BEFORE the line
+    // below, because capturing is the very thing that would let a knob be
+    // middle dragged. A control that has not asked for the button never learns
+    // the press happened, which is how this stays invisible to code written
+    // before the button was routed at all.
+    if (mod.M)
+    {
+      IControl* pHit = GetMouseControl(x, y, false, false, mod.touchID);
+
+      if (!pHit || !pHit->WantsMiddleMouse())
+        continue;
+    }
+
     IControl* pCapturedControl = GetMouseControl(x, y, true, false, mod.touchID);
     
     if (pCapturedControl)

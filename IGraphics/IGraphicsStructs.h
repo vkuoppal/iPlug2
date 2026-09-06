@@ -1696,6 +1696,14 @@ struct IRECT
 struct IMouseMod
 {
   bool L, R, S, C, A;
+
+  /** \c true if the MIDDLE (scroll wheel) button is down. Deliberately NOT a
+   * constructor argument: every existing call site keeps compiling untouched
+   * and gets false, and only a platform layer that knows about the button sets
+   * it. A control never sees a middle button event unless it asks for one -
+   * see IControl::WantsMiddleMouse. */
+  bool M = false;
+
   ITouchID touchID = 0;
   float touchRadius = 0.f;
   
