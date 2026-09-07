@@ -556,7 +556,23 @@ void IPopupMenuControl::CalculateMenuPanels(float x, float y)
           float x = 0.f;
           float y = 0.f;
           
-          if (mCalloutArrowDir == kNorth)
+          // mCallOut GATES THIS, AND THAT IS THE WHOLE FIX. mCalloutArrowDir only
+          // describes where a CALLOUT's arrow points; outside callout mode it is not a
+          // statement about anything. Two bugs came out of reading it here anyway:
+          //
+          //   * it was `if (== kSouth)` and `if (== kNorth)` with no else, and the
+          //     member defaults to kEast - so a plain menu assigned y NOTHING and every
+          //     submenu opened pinned to the top of the context at y = 0.
+          //   * Expand()'s `if (mMenuHasSubmenu)` block runs for plain menus too and
+          //     sets the member to kNorth whenever the anchor sits in the lower half of
+          //     the window. kNorth's formula grows a submenu UPWARD from the row, so a
+          //     tall submenu ran off the top and clamped there - the same wrong place,
+          //     now arrived at deliberately.
+          //
+          // A plain menu wants one thing: the submenu beside the row that opened it. y
+          // is the panel top and the first cell sits PAD below it, so cell-top minus PAD
+          // lines the first submenu row up with the parent row.
+          if (mCallOut && mCalloutArrowDir == kNorth)
           {
             y = (pCellRect->T - (PAD / 2.f) - panelHeight) + (mCellGap * 2.f) + mDropShadowSize;
             if ( y <= minT) y = minT;
@@ -564,15 +580,6 @@ void IPopupMenuControl::CalculateMenuPanels(float x, float y)
           }
           else
           {
-            // kSOUTH, AND ALSO kEAST/kWEST - WHICH IS THE DEFAULT AND THE ENTIRE
-            // NON-CALLOUT CASE. This was `if (mCalloutArrowDir == kSouth)`, so with the
-            // default kEast neither branch assigned y and it kept its initial 0: every
-            // submenu opened pinned to the TOP of the graphics context, nowhere near
-            // the row that opened it. mCalloutArrowDir only means anything when
-            // mCallOut is set, so a plain menu could never place a submenu vertically.
-            //
-            // y is the panel's top and the first cell sits PAD below it, so taking PAD
-            // off the cell top lines the first submenu row up with the parent row.
             y = pCellRect->T - PAD;
             if (y > maxB) y = maxB;
             if ( y <= minT) y = minT;
