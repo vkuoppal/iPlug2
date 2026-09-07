@@ -1339,7 +1339,14 @@ public:
    @param text The text style to use for the menu
    @param bounds The area that the menu should occupy. An empty IRECT will mean the bounds are calculated based on the menu items */
   void AttachPopupMenuControl(const IText& text = DEFAULT_TEXT, const IRECT& bounds = IRECT());
-  
+
+  /** Attach a SUBCLASSED control for pop-up menus, taking ownership of it. The overload
+   above can only construct the stock IPopupMenuControl, which leaves the drawing
+   virtuals on that class unreachable in practice. Call at UI build time.
+   @param pControl The control to take ownership of */
+  void AttachPopupMenuControl(IPopupMenuControl* pControl);
+
+
   /** Remove the IGraphics popup menu, use platform popup menu if available */
   void RemovePopupMenuControl();
   

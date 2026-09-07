@@ -380,6 +380,18 @@ void IGraphics::AttachPopupMenuControl(const IText& text, const IRECT& bounds)
   }
 }
 
+void IGraphics::AttachPopupMenuControl(IPopupMenuControl* pControl)
+{
+  // Takes ownership. The overload above can only ever build the stock control, so a
+  // product that skins its menus had no way in short of forking this file. Call at UI
+  // build time: replacing the control while a menu is expanded would destroy the panel
+  // that is mid-gesture.
+  assert(pControl && "AttachPopupMenuControl: null control");
+
+  mPopupControl = std::unique_ptr<IPopupMenuControl>(pControl);
+  mPopupControl->SetDelegate(*GetDelegate());
+}
+
 void IGraphics::RemovePopupMenuControl()
 {
   mPopupControl = nullptr;
