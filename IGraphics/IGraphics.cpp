@@ -258,25 +258,33 @@ void IGraphics::SetControlValueAfterPopupMenu(IPopupMenu* pMenu)
 {
   if (!mInPopupMenu)
     return;
-  
-  if (mIsContextMenu)
-    mInPopupMenu->OnContextSelection(pMenu ? pMenu->GetChosenItemIdx() : -1);
+
+  // Take a local copy and clear the state BEFORE calling back, because a control is
+  // allowed to open another menu from inside its own callback - a context menu whose
+  // rows include "open the host's parameter menu", for one. Clearing afterwards, as
+  // this did, nulls out the binding the SECOND menu just established, so that menu
+  // opens with nowhere to report to and every row in it silently does nothing.
+  IControl* pControl = mInPopupMenu;
+  const bool isContextMenu = mIsContextMenu;
+  const int valIdx = mPopupMenuValIdx;
+  mInPopupMenu = nullptr;
+
+  if (isContextMenu)
+    pControl->OnContextSelection(pMenu ? pMenu->GetChosenItemIdx() : -1);
   else
-    mInPopupMenu->OnPopupMenuSelection(!pMenu || pMenu->GetChosenItemIdx() == -1 ? nullptr : pMenu, mPopupMenuValIdx);
-  
-  int nVals = mInPopupMenu->NVals();
+    pControl->OnPopupMenuSelection(!pMenu || pMenu->GetChosenItemIdx() == -1 ? nullptr : pMenu, valIdx);
+
+  int nVals = pControl->NVals();
 
   for (int v = 0; v < nVals; v++)
   {
-    int paramIdx = mInPopupMenu->GetParamIdx(v);
-    
+    int paramIdx = pControl->GetParamIdx(v);
+
     if (paramIdx > kNoParameter)
     {
       GetDelegate()->EndInformHostOfParamChangeFromUI(paramIdx);
     }
   }
-  
-  mInPopupMenu = nullptr;
 }
 
 void IGraphics::DeleteFromPopupMenu(IPopupMenu* pMenu, int itemIdx)
