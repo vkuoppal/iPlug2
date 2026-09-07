@@ -28,8 +28,13 @@ BEGIN_IGRAPHICS_NAMESPACE
  * @ingroup SpecialControls */
 class IPopupMenuControl : public IControl
 {
+protected:
+  // Forward-declared up here so the drawing virtuals below can take a MenuPanel*.
+  // PROTECTED, matching the definition further down: an implicitly-private forward
+  // declaration and a protected definition disagree, which MSVC accepts as a
+  // nonstandard extension (C4240) and other compilers reject outright.
   class MenuPanel;
-    
+
 public:
   /** An enumerated list, that is used to determine the state of the menu, mainly for animations*/
   enum EPopupState
@@ -138,10 +143,17 @@ public:
   /** Set the bounds that the menu can potentially occupy, if not the full graphics context */
   void SetMaxBounds(const IRECT& bounds) { mMaxBounds = bounds; }
 
+protected:
+  /** Get an IRECT represents the maximum dimensions of the longest text item in the menu.
+   * Virtual so that a subclass which draws decoration of its own — a leading glyph, a
+   * trailing label, anything not in Item::GetText() — can reserve the room for it. The
+   * cell width comes from here and nowhere else, so a skin that widens a cell in
+   * DrawCellText alone would simply overflow the panel it is drawn into.
+   * The default is unchanged, so a subclass that does not override sizes exactly as before. */
+  virtual IRECT GetLargestCellRectForMenu(IPopupMenu& menu, float x, float y) const;
+
 private:
-  /** Get an IRECT represents the maximum dimensions of the longest text item in the menu */
-  IRECT GetLargestCellRectForMenu(IPopupMenu& menu, float x, float y) const;
-  
+
   /** Sets the values of two variables for the length and width of the specified menu panel.
    * @param menu The menu to get dimensions of
    * @param width Value to be filled with the panel's width.
@@ -154,7 +166,15 @@ private:
   /** This method is called to collapse the modal pop-up menu and make it invisible. It handles the dirtying of the graphics context, and modification of graphics behaviours such as tooltips and mouse cursor */
   virtual void CollapseEverything();
 
-private:
+protected:
+  // WAS private, AND THAT MADE THE DRAWING VIRTUALS ABOVE IMPOSSIBLE TO OVERRIDE.
+  // DrawPanelBackground and DrawPanelShadow are declared virtual and take a
+  // MenuPanel*, but MenuPanel was private, so no subclass could name the parameter
+  // type and no subclass could implement them. A skin also needs the geometry the
+  // base lays cells out with — PAD, TEXT_HPAD, TICK_SIZE, ARROW_SIZE, mRoundness —
+  // or it draws its own decoration against constants that can silently drift from
+  // the ones that sized the panel. Widening to protected changes no behaviour and
+  // no layout; it only lets the existing extension points be used.
 
   /** MenuPanel is used to manage the rectangle of a single menu, and the rectangles for the cells for each menu item */
   class MenuPanel
