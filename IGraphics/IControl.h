@@ -94,6 +94,17 @@ public:
    * @return \c true if this control handles the middle button */
   virtual bool WantsMiddleMouse() const { return false; }
 
+  /** Override and return \c true to handle the RIGHT button yourself instead of
+   * having IGraphics open the host's parameter context menu. A control that is
+   * bound to a parameter never sees a right-click otherwise: IGraphics
+   * intercepts it before OnMouseDown and calls PopupHostContextMenuForParam.
+   * Default false, so every existing parameter control keeps the host menu it
+   * has today and only a control that asks takes the button over. A control
+   * that does take it over owns the whole gesture, including offering the host
+   * menu itself if its users still want one.
+   * @return \c true if this control handles the right button */
+  virtual bool WantsRightClick() const { return false; }
+
 /** Implement this method to respond to a mouse up event on this control. 
    * @param x The X coordinate of the mouse event
    * @param y The Y coordinate of the mouse event

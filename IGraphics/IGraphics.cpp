@@ -1063,7 +1063,11 @@ void IGraphics::OnMouseDown(const std::vector<IMouseInfo>& points)
 #endif
 
 #ifndef IGRAPHICS_NO_CONTEXT_MENU
-      if (mod.R && paramIdx > kNoParameter)
+      // A control that wants the right button gets it: skip the host parameter
+      // menu and let the press fall through to OnMouseDown like any other.
+      // Default is false, so this is a no-op for every control that has not
+      // asked, and the host menu stays exactly where it was.
+      if (mod.R && paramIdx > kNoParameter && !pCapturedControl->WantsRightClick())
       {
         ReleaseMouseCapture();
         PopupHostContextMenuForParam(pCapturedControl, paramIdx, x, y);
