@@ -556,22 +556,40 @@ void IPopupMenuControl::CalculateMenuPanels(float x, float y)
           float x = 0.f;
           float y = 0.f;
           
-          if (mCalloutArrowDir == kSouth)
-          {
-            y = pCellRect->T - PAD;
-            if (y > maxB) y = maxB;
-            if ( y <= minT) y = minT;
-          }
-          
           if (mCalloutArrowDir == kNorth)
           {
             y = (pCellRect->T - (PAD / 2.f) - panelHeight) + (mCellGap * 2.f) + mDropShadowSize;
             if ( y <= minT) y = minT;
             if (y > maxB) y = maxB;
           }
-          
-          if (mSubmenuOnRight) x = pCellRect->R + PAD + calloutSpace;
-          else x = pCellRect->L - PAD - calloutSpace - panelWidth - mDropShadowSize;
+          else
+          {
+            // kSOUTH, AND ALSO kEAST/kWEST - WHICH IS THE DEFAULT AND THE ENTIRE
+            // NON-CALLOUT CASE. This was `if (mCalloutArrowDir == kSouth)`, so with the
+            // default kEast neither branch assigned y and it kept its initial 0: every
+            // submenu opened pinned to the TOP of the graphics context, nowhere near
+            // the row that opened it. mCalloutArrowDir only means anything when
+            // mCallOut is set, so a plain menu could never place a submenu vertically.
+            //
+            // y is the panel's top and the first cell sits PAD below it, so taking PAD
+            // off the cell top lines the first submenu row up with the parent row.
+            y = pCellRect->T - PAD;
+            if (y > maxB) y = maxB;
+            if ( y <= minT) y = minT;
+          }
+
+          // PREFER THE REQUESTED SIDE, THEN FLIP - do not slide. Both placements used
+          // to fall through to a clamp, which drags a submenu that does not fit back
+          // ACROSS the parent it belongs to and leaves it overlapping the rows you are
+          // reading. Flipping keeps it adjacent, which is the only thing a submenu's
+          // position has to say. The clamps stay as a last resort for a submenu too
+          // wide to fit on either side.
+          const float xRight = pCellRect->R + PAD + calloutSpace;
+          const float xLeft  = pCellRect->L - PAD - calloutSpace - panelWidth - mDropShadowSize;
+
+          if (mSubmenuOnRight) x = (xRight <= maxR) ? xRight : xLeft;
+          else                 x = (xLeft  >= minL) ? xLeft  : xRight;
+
           if ( x <= minL ) x = minL;
           if ( x > maxR ) x = maxR;
           
