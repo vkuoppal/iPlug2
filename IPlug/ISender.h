@@ -442,7 +442,7 @@ public:
     if (minThresholdDb <= kNoThresholdDb)
       mThreshold = -1.0f;
     else
-      mThreshold = DBToAmp(minThresholdDb);
+      mThreshold = static_cast<float>(DBToAmp(minThresholdDb));
     
     SetBufferSize(bufferSize);
   }
