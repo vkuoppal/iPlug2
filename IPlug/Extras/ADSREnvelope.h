@@ -134,6 +134,17 @@ public:
   /** Release the envelope */
   inline void Release()
   {
+    // riite: RELEASING AN IDLE ENVELOPE IS A NO-OP, and without this line it was
+    // a way to make a silent voice look busy for a whole release stage. Every
+    // voice is released at Reset (VoiceAllocator::Clear -> SoftKillAllVoices),
+    // so a freshly opened plugin reported every voice busy before a key was
+    // touched - and MidiSynth::ProcessBlock skips the voices entirely while
+    // nothing is sounding, so those phantom releases never advanced and never
+    // retired. The free-voice search then found nothing for as long as it took
+    // the first note to outlive one release time, and every note-on in that
+    // window went through the stealing path instead.
+    if (mStage == kIdle) return;
+
     mStage = kRelease;
     mReleaseLevel = mPrevResult;
     mEnvValue = 1.;

@@ -305,21 +305,49 @@ int VoiceAllocator::FindFreeVoiceIndex(int startIndex) const
   return -1;
 }
 
+// riite: STEAL A VOICE THE PLAYER HAS ALREADY LET GO OF, and only fall back to
+// age when there is no such voice.
+//
+// This used to be age alone, and age alone makes exactly the wrong choice on the
+// one gesture that fills a voice pool fastest. Hold a bass note and tremolo two
+// notes over it: each released note keeps its voice for a whole release stage, so
+// after a second or so of that every voice is busy - fifteen of them tails of
+// notes the player has already lifted, one of them the pedal point they are still
+// leaning on. The held note is by definition the OLDEST, so it was the first thing
+// stolen, every time, and the bass dropped out mid-phrase while the sixteenth
+// copy of a decaying blip kept its voice.
+//
+// StopVoice marks a released voice by setting its key to kAllKeys, so a voice
+// still carrying a real key number is one whose note is still being asked for -
+// a held key, or one the sustain pedal is holding. Preferring the oldest RELEASED
+// voice means a note under the player's finger now survives until every voice in
+// the pool is under a finger too, which is the point at which stealing one is
+// honest.
 int VoiceAllocator::FindVoiceIndexToSteal(int64_t sampleTime) const
 {
-  size_t voices = mVoicePtrs.size();
-  int64_t earliestTime = sampleTime;
-  int longestPlayingVoiceIdx = 0;
+  const int voices = static_cast<int>(mVoicePtrs.size());
+
+  int64_t oldestReleased = sampleTime, oldestAny = sampleTime;
+  int releasedIdx = -1, anyIdx = 0;
+
   for(int i=0; i<voices; ++i)
   {
     SynthVoice* pv = mVoicePtrs[i];
-    if(pv->mLastTriggeredTime < earliestTime)
+
+    if(pv->mLastTriggeredTime < oldestAny)
     {
-      earliestTime = pv->mLastTriggeredTime;
-      longestPlayingVoiceIdx = i;
+      oldestAny = pv->mLastTriggeredTime;
+      anyIdx = i;
+    }
+
+    if(pv->mKey == kAllKeys && pv->mLastTriggeredTime < oldestReleased)
+    {
+      oldestReleased = pv->mLastTriggeredTime;
+      releasedIdx = i;
     }
   }
-  return longestPlayingVoiceIdx;
+
+  return releasedIdx >= 0 ? releasedIdx : anyIdx;
 }
 
 // start a single voice and set its current channel and key.
