@@ -40,6 +40,8 @@ void VoiceAllocator::Clear()
 {
   mHeldKeys.clear();
   mSustainedNotes.clear();
+  VoiceInputEvent pending;
+  while (mInputQueue.Pop(pending)) {}
   HardKillAllVoices();
 }
 
@@ -110,6 +112,12 @@ VoiceAllocator::VoiceBitsArray VoiceAllocator::VoicesMatchingAddress(VoiceAddres
     {
       v[i] = v[i] & (mVoicePtrs[i]->mKey == addr.mKey);
     }
+  }
+
+  if(addr.mSource != kAllNoteSources)
+  {
+    for(int i=0; i<n; ++i)
+      v[i] = v[i] & (mVoicePtrs[i]->mNoteSource == addr.mSource);
   }
 
   // busy flag
@@ -234,6 +242,16 @@ void VoiceAllocator::ProcessEvents(int blockSize, int64_t sampleTime)
       case kSustainAction:
       {
         mSustainPedalDown = (bool) (event.mValue >= 0.5);
+        if (mPolyMode == kPolyModePoly)
+        {
+          // A released arp voice and a held keyboard voice may have the same
+          // pitch. Pedal release consults each voice's own key state.
+          if (!mSustainPedalDown)
+            for (int i=0; i<(int)mVoicePtrs.size(); ++i)
+              if (!mVoicePtrs[i]->mKeyHeld && mVoicePtrs[i]->mKey != kAllKeys)
+                StopVoice(i, event.mSampleOffset);
+          break;
+        }
         if (!mSustainPedalDown) // sustain pedal released
         {
           // if notes are sustaining, check that they're not still held and if not then stop voice
@@ -367,6 +385,7 @@ void VoiceAllocator::StartVoice(int voiceIdx, int channel, int key, float pitch,
   pVoice->mLastTriggeredTime = sampleTime;
   pVoice->mChannel = channel;
   pVoice->mKey = key;
+  pVoice->mKeyHeld = true;
   pVoice->mGain = 1.;
 
   // call voice's Trigger method
@@ -388,6 +407,7 @@ void VoiceAllocator::StartVoices(VoiceBitsArray vbits, int channel, int key, flo
 void VoiceAllocator::StopVoice(int voiceIdx, int sampleOffset)
 {
   mVoiceGlides[voiceIdx]->at(kVoiceControlGate).SetTarget(0.0, sampleOffset, 1, mBlockSize);
+  mVoicePtrs[voiceIdx]->mKeyHeld = false;
   mVoicePtrs[voiceIdx]->mKey = -1;
   mVoicePtrs[voiceIdx]->Release();
 }
@@ -462,6 +482,8 @@ void VoiceAllocator::NoteOn(VoiceInputEvent e, int64_t sampleTime)
       if(i >= 0)
       {
         bool retrig = false;
+        mVoicePtrs[i]->mNoteSource = e.mAddress.mSource == kAllNoteSources ? 0 : e.mAddress.mSource;
+        mVoicePtrs[i]->mSustainEnabled = !(e.mAddress.mFlags & kVoiceIgnoreSustain);
         StartVoice(i, channel, key, pitch, velocity, offset, sampleTime, retrig);
       }
       break;
@@ -470,6 +492,10 @@ void VoiceAllocator::NoteOn(VoiceInputEvent e, int64_t sampleTime)
     default:
       break;
   }
+
+  // Polyphonic ownership and sustain live on each allocated voice. The legacy
+  // key stacks below belong to the allocator's monophonic mode only.
+  if(mPolyMode == kPolyModePoly) return;
 
   // add to held keys
   if(std::find(mHeldKeys.begin(), mHeldKeys.end(), key) == mHeldKeys.end())
@@ -490,6 +516,18 @@ void VoiceAllocator::NoteOff(VoiceInputEvent e, int64_t sampleTime)
   int channel = e.mAddress.mChannel;
   int key = e.mAddress.mKey;
   int offset = e.mSampleOffset;
+
+  if(mPolyMode == kPolyModePoly)
+  {
+    const auto voices = VoicesMatchingAddress(e.mAddress);
+    for(int i=0; i<(int)mVoicePtrs.size(); ++i) if(voices[i])
+    {
+      mVoicePtrs[i]->mKeyHeld = false;
+      if(!mSustainPedalDown || !mVoicePtrs[i]->mSustainEnabled)
+        StopVoice(i, offset);
+    }
+    return;
+  }
 
   // remove from held keys
   mHeldKeys.erase(std::remove(mHeldKeys.begin(), mHeldKeys.end(), key), mHeldKeys.end());

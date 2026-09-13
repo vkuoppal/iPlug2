@@ -37,16 +37,19 @@ struct VoiceAddress
   uint8_t mChannel;
   uint8_t mKey;
   uint8_t mFlags;
+  uint8_t mSource = UCHAR_MAX; // Internal note owner; wildcard for expression/legacy callers.
 };
 
 const uint8_t kAllZones = UCHAR_MAX;
 const uint8_t kAllChannels = UCHAR_MAX;
 const uint8_t kAllKeys = UCHAR_MAX;
+const uint8_t kAllNoteSources = UCHAR_MAX;
 
 // flags
 const uint8_t kVoicesBusy = 1 << 0;
 const uint8_t kVoicesMostRecent = 1 << 1;
 const uint8_t kVoicesAll = 1 << 2;
+const uint8_t kVoiceIgnoreSustain = 1 << 3; // Sequenced gates own their release.
 
 enum EVoiceAction
 {

@@ -416,7 +416,7 @@ bool MidiSynth::ProcessBlock(sample** inputs, sample** outputs, int nInputs, int
 
       while (!mMidiQueue.Empty())
       {
-        IMidiMsg msg = mMidiQueue.Peek();
+        QueuedMidiMsg msg = mMidiQueue.Peek();
 
         // we assume the messages are in chronological order. If we find one later than the current block we are done.
         if (msg.mOffset > startIndex + blockSize) break;
@@ -430,7 +430,14 @@ bool MidiSynth::ProcessBlock(sample** inputs, sample** outputs, int nInputs, int
           // send performance messages to the voice allocator
           // message offset is relative to the start of this processSamples() block
           msg.mOffset -= startIndex;
-          mVoiceAllocator.AddEvent(MidiMessageToEvent(msg));
+          auto event = MidiMessageToEvent(msg);
+          if ((event.mAction == kNoteOnAction || event.mAction == kNoteOffAction)
+              && !(event.mAddress.mFlags & kVoicesAll))
+          {
+            event.mAddress.mSource = msg.mNoteSource;
+            if (!msg.mSustain) event.mAddress.mFlags |= kVoiceIgnoreSustain;
+          }
+          mVoiceAllocator.AddEvent(event);
         }
         mMidiQueue.Remove();
       }

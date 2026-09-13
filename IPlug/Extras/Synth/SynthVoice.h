@@ -108,6 +108,9 @@ protected:
   uint8_t mZone{0};
   uint8_t mChannel{0};
   uint8_t mKey{0};
+  uint8_t mNoteSource{0};
+  bool mKeyHeld{false};
+  bool mSustainEnabled{true};
   double mBasePitch{0.};
   double mGain{0.}; // used by voice allocator to hard-kill voices.
 

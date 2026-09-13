@@ -52,7 +52,9 @@ public:
   void Reset()
   {
     mSampleTime = 0;
+    mMidiQueue.Clear();
     mVoiceAllocator.Clear();
+    mVoicesAreActive = false;
   }
 
   void SetSampleRateAndBlockSize(double sampleRate, int blockSize);
@@ -140,9 +142,11 @@ public:
     mVoiceAllocator.AddVoice(pVoice, zone);
   }
 
-  void AddMidiMsgToQueue(const IMidiMsg& msg)
+  // Polyphonic note ownership is internal metadata, independent of MIDI channel or pitch.
+  // Controllers still address every source on their normal MIDI channel.
+  void AddMidiMsgToQueue(const IMidiMsg& msg, uint8_t noteSource = 0, bool sustain = true)
   {
-    mMidiQueue.Add(msg);
+    mMidiQueue.Add(QueuedMidiMsg(msg, noteSource, sustain));
   }
 
   /** Processes a block of audio samples
@@ -195,7 +199,14 @@ private:
   // basic MIDI data
   VoiceAllocator mVoiceAllocator;
   uint16_t mUnisonVoices{1};
-  IMidiQueue mMidiQueue;
+  struct QueuedMidiMsg : IMidiMsg
+  {
+    uint8_t mNoteSource = 0;
+    bool mSustain = true;
+    QueuedMidiMsg(const IMidiMsg& msg = {}, uint8_t source = 0, bool sustain = true)
+    : IMidiMsg(msg), mNoteSource(source), mSustain(sustain) {}
+  };
+  IMidiQueueBase<QueuedMidiMsg> mMidiQueue;
   float mVelocityLUT[128];
   float mAfterTouchLUT[128];
   ChannelState mChannelStates[16]{};
