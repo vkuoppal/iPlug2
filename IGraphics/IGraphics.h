@@ -1269,6 +1269,8 @@ private:
    * @param isContext Determines if the menu is a contextual menu or not
    * @param valIdx The value index for the control value that the prompt relates to */
   void DoCreatePopupMenu(IControl& control, IPopupMenu& menu, const IRECT& bounds, int valIdx, bool isContext);
+  void EndMouseGesture(ITouchID touchID);
+  void EndPopupMenuGesture();
   
   /** Called by ICornerResizer when drag resize commences */
   void StartDragResize() { mResizingInProcess = true; }
@@ -1857,6 +1859,9 @@ private:
   IRECTList mGestureRegions; // Rectangular regions linked to gestures (excluding IControls)
   std::unordered_map<int, IGestureFunc> mGestureRegionFuncs; // Map of gesture region index to gesture function
   std::unordered_map<ITouchID, IControl*> mCapturedMap; // associative array of touch ids to control pointers, the same control can be touched multiple times
+  // Keep the IDs actually begun: callbacks can rebind or remove the control.
+  std::unordered_map<ITouchID, std::vector<int>> mMouseDownParams;
+  std::vector<int> mPopupMenuParams;
   IControl* mMouseOver = nullptr;
   IControl* mInTextEntry = nullptr;
   IControl* mInPopupMenu = nullptr;

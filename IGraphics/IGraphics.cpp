@@ -133,9 +133,8 @@ void IGraphics::SetScaleConstraints(float lo, float hi)
 
 void IGraphics::RemoveControlWithTag(int ctrlTag)
 {
-  mControls.DeletePtr(GetControlWithTag(ctrlTag), true);
-  mCtrlTags.erase(ctrlTag);
-  SetAllControlsDirty();
+  if (IControl* pControl = GetControlWithTag(ctrlTag))
+    RemoveControl(pControl);
 }
 
 void IGraphics::RemoveControls(int fromIdx)
@@ -155,7 +154,7 @@ void IGraphics::RemoveControls(int fromIdx)
       ClearInTextEntryControl();
 
     if(pControl == mInPopupMenu)
-      mInPopupMenu = nullptr;
+      EndPopupMenuGesture();
     
     if(pControl->GetTag() > kNoTag)
       mCtrlTags.erase(pControl->GetTag());
@@ -183,7 +182,7 @@ void IGraphics::RemoveControl(IControl* pControl)
     ClearInTextEntryControl();
 
   if(pControl == mInPopupMenu)
-    mInPopupMenu = nullptr;
+    EndPopupMenuGesture();
   
   if(pControl->GetTag() > kNoTag)
     mCtrlTags.erase(pControl->GetTag());
@@ -196,6 +195,7 @@ void IGraphics::RemoveControl(IControl* pControl)
 void IGraphics::RemoveAllControls()
 {
   ReleaseMouseCapture();
+  EndPopupMenuGesture();
   ClearMouseOver();
 
   mPopupControl = nullptr;
@@ -268,23 +268,16 @@ void IGraphics::SetControlValueAfterPopupMenu(IPopupMenu* pMenu)
   const bool isContextMenu = mIsContextMenu;
   const int valIdx = mPopupMenuValIdx;
   mInPopupMenu = nullptr;
+  std::vector<int> params;
+  params.swap(mPopupMenuParams);
 
   if (isContextMenu)
     pControl->OnContextSelection(pMenu ? pMenu->GetChosenItemIdx() : -1);
   else
     pControl->OnPopupMenuSelection(!pMenu || pMenu->GetChosenItemIdx() == -1 ? nullptr : pMenu, valIdx);
 
-  int nVals = pControl->NVals();
-
-  for (int v = 0; v < nVals; v++)
-  {
-    int paramIdx = pControl->GetParamIdx(v);
-
-    if (paramIdx > kNoParameter)
-    {
-      GetDelegate()->EndInformHostOfParamChangeFromUI(paramIdx);
-    }
-  }
+  for (int paramIdx : params)
+    GetDelegate()->EndInformHostOfParamChangeFromUI(paramIdx);
 }
 
 void IGraphics::DeleteFromPopupMenu(IPopupMenu* pMenu, int itemIdx)
@@ -1095,11 +1088,16 @@ void IGraphics::OnMouseDown(const std::vector<IMouseInfo>& points)
       }
 #endif
 
+      EndMouseGesture(mod.touchID);
+      std::vector<int> params;
       for (int v = 0; v < nVals; v++)
       {
         if (pCapturedControl->GetParamIdx(v) > kNoParameter)
-          GetDelegate()->BeginInformHostOfParamChangeFromUI(pCapturedControl->GetParamIdx(v));
+          params.push_back(pCapturedControl->GetParamIdx(v));
       }
+      mMouseDownParams[mod.touchID] = params;
+      for (int begunParamIdx : params)
+        GetDelegate()->BeginInformHostOfParamChangeFromUI(begunParamIdx);
 
       pCapturedControl->OnMouseDown(x, y, mod);
     }
@@ -1125,15 +1123,8 @@ void IGraphics::OnMouseUp(const std::vector<IMouseInfo>& points)
       
         pCapturedControl->OnMouseUp(x, y, mod);
       
-        int nVals = pCapturedControl->NVals();
-
-        for (int v = 0; v < nVals; v++)
-        {
-          if (pCapturedControl->GetParamIdx(v) > kNoParameter)
-            GetDelegate()->EndInformHostOfParamChangeFromUI(pCapturedControl->GetParamIdx(v));
-        }
-        
         mCapturedMap.erase(mod.touchID);
+        EndMouseGesture(mod.touchID);
       }
     }
   }
@@ -1165,6 +1156,7 @@ void IGraphics::OnTouchCancelled(const std::vector<IMouseInfo>& points)
         IControl* pCapturedControl = itr->second;
         pCapturedControl->OnTouchCancelled(x, y, mod);
         mCapturedMap.erase(mod.touchID); // remove from captured list
+        EndMouseGesture(mod.touchID);
         
         //        DBGMSG("DEL - NCONTROLS captured = %lu\n", mCapturedMap.size());
       }
@@ -1330,9 +1322,36 @@ void IGraphics::OnDropMultiple(const std::vector<const char*>& paths, float x, f
   if (pControl) pControl->OnDropMultiple(paths);
 }
 
+void IGraphics::EndMouseGesture(ITouchID touchID)
+{
+  auto itr = mMouseDownParams.find(touchID);
+  if (itr == mMouseDownParams.end())
+    return;
+
+  std::vector<int> params;
+  params.swap(itr->second);
+  mMouseDownParams.erase(itr);
+  for (int paramIdx : params)
+    GetDelegate()->EndInformHostOfParamChangeFromUI(paramIdx);
+}
+
+void IGraphics::EndPopupMenuGesture()
+{
+  mInPopupMenu = nullptr;
+  std::vector<int> params;
+  params.swap(mPopupMenuParams);
+  for (int paramIdx : params)
+    GetDelegate()->EndInformHostOfParamChangeFromUI(paramIdx);
+}
+
 void IGraphics::ReleaseMouseCapture()
 {
   mCapturedMap.clear();
+  decltype(mMouseDownParams) gestures;
+  gestures.swap(mMouseDownParams);
+  for (const auto& gesture : gestures)
+    for (int paramIdx : gesture.second)
+      GetDelegate()->EndInformHostOfParamChangeFromUI(paramIdx);
   if (mCursorHidden)
     HideMouseCursor(false);
 }
@@ -1992,6 +2011,20 @@ void IGraphics::CreateTextEntry(IControl& control, const IText& text, const IREC
 
 void IGraphics::DoCreatePopupMenu(IControl& control, IPopupMenu& menu, const IRECT& bounds, int valIdx, bool isContext)
 {
+  EndPopupMenuGesture();
+  // A value menu completes the mouse edit that opened it. Context menus and
+  // parameterless binding menus may have no edit to finish at all.
+  for (const auto& capture : mCapturedMap)
+  {
+    if (capture.second != &control)
+      continue;
+    auto itr = mMouseDownParams.find(capture.first);
+    if (itr != mMouseDownParams.end())
+    {
+      mPopupMenuParams.insert(mPopupMenuParams.end(), itr->second.begin(), itr->second.end());
+      mMouseDownParams.erase(itr);
+    }
+  }
   ReleaseMouseCapture();
     
   mInPopupMenu = &control;
