@@ -45,12 +45,11 @@ struct SysExData
 {
   SysExData(int offset = 0, int size = 0, const void* pData = 0)
   : mOffset(offset)
-  , mSize(size)
+  , mSize(size >= 0 && size < MAX_SYSEX_SIZE ? size : 0)
   {
-    assert(size < MAX_SYSEX_SIZE);
-    
-    if (pData)
-      memcpy(mData, pData, size);
+    // Reject oversized input, never truncate or overrun the fixed message buffer.
+    if (pData && mSize)
+      memcpy(mData, pData, mSize);
     else
       memset(mData, 0, MAX_SYSEX_SIZE);
   }

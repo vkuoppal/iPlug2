@@ -700,12 +700,14 @@ void IPlugCLAP::ProcessOutputEvents(const clap_output_events* pOutputEvents, int
 
         if (header.type == CLAP_EVENT_NOTE_ON || header.type == CLAP_EVENT_NOTE_OFF)
         {
+          header.size = sizeof(clap_event_note);
           int16_t channel = static_cast<int16_t>(msg.Channel());
           clap_event_note note_event { header, -1, 0,  channel, msg.mData1, static_cast<double>(msg.mData2) / 127.0};
           pOutputEvents->try_push(pOutputEvents, &note_event.header);
         }
         else
         {
+          header.size = sizeof(clap_event_midi);
           clap_event_midi midi_event { header, 0, { status, msg.mData1, msg.mData2 } };
           pOutputEvents->try_push(pOutputEvents, &midi_event.header);
         }
