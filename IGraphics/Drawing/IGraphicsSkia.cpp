@@ -644,7 +644,20 @@ void IGraphicsSkia::DrawBitmap(const IBitmap& bitmap, const IRECT& dest, int src
 #endif
     
   if (image->mIsSurface)
-    image->mSurface->draw(mCanvas, 0.0, 0.0, samplingOptions, &p);
+  {
+    // A RASTER surface - every cacheable layer, see CreateAPIBitmap - must be drawn
+    // from its snapshot. SkSurface::draw on a raster surface copies the pixels into a
+    // brand-new image on every call, and on a GPU canvas a new image is a new texture
+    // upload: a "cached" layer was re-uploaded every frame it was drawn. The snapshot
+    // is the same image until the layer is next rendered into, so the texture cache
+    // hits and the upload happens once per change. Same pixels, same sampling.
+    // GPU surfaces keep SkSurface::draw, which blits their texture without forcing a
+    // snapshot (and the copy-on-write that would follow the layer's next redraw).
+    if (!image->mSurface->recordingContext())
+      mCanvas->drawImage(image->mSurface->makeImageSnapshot(), 0.0, 0.0, samplingOptions, &p);
+    else
+      image->mSurface->draw(mCanvas, 0.0, 0.0, samplingOptions, &p);
+  }
   else
     mCanvas->drawImage(image->mImage, 0.0, 0.0, samplingOptions, &p);
     
