@@ -656,6 +656,37 @@ LRESULT CALLBACK IGraphicsWin::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARA
   return DefWindowProcW(hWnd, msg, wParam, lParam);
 }
 
+// riite: Ctrl+Backspace and Ctrl+Delete for the text entry, which a single-line
+// EDIT does not have - it types the DEL character as a box instead. A word is a
+// run of non-spaces, the rule the kit's drawn TextField uses, so the two kinds of
+// text box agree. Goes through EM_REPLACESEL so the EDIT's own Ctrl+Z undoes it.
+static void EditDeleteWord(HWND hWnd, bool forward)
+{
+  DWORD s = 0, e = 0;
+  SendMessageW(hWnd, EM_GETSEL, (WPARAM) &s, (LPARAM) &e);
+  if (s == e)
+  {
+    const int n = GetWindowTextLengthW(hWnd);
+    std::wstring t((size_t) n + 1, L'\0');
+    GetWindowTextW(hWnd, &t[0], n + 1);
+    auto space = [&t](DWORD i) { return t[i] == L' ' || t[i] == L'\t'; };
+    DWORD i = s;
+    if (forward)
+    {
+      while (i < (DWORD) n && !space(i)) ++i;
+      while (i < (DWORD) n && space(i)) ++i;
+      SendMessageW(hWnd, EM_SETSEL, s, i);
+    }
+    else
+    {
+      while (i > 0 && space(i - 1)) --i;
+      while (i > 0 && !space(i - 1)) --i;
+      SendMessageW(hWnd, EM_SETSEL, i, s);
+    }
+  }
+  SendMessageW(hWnd, EM_REPLACESEL, TRUE, (LPARAM) L"");
+}
+
 // static
 LRESULT CALLBACK IGraphicsWin::ParamEditProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
@@ -669,6 +700,11 @@ LRESULT CALLBACK IGraphicsWin::ParamEditProc(HWND hWnd, UINT msg, WPARAM wParam,
     {
       case WM_CHAR:
       {
+        // riite: the control characters Ctrl+A and Ctrl+Backspace produce. Both
+        // are handled on WM_KEYDOWN below; without this the EDIT beeps at the
+        // first and types the second as a box.
+        if (wParam == 0x01 || wParam == 0x7F) return 0;
+
         // limit to numbers for text entry on appropriate parameters
         if (pGraphics->mEditParam)
         {
@@ -699,6 +735,19 @@ LRESULT CALLBACK IGraphicsWin::ParamEditProc(HWND hWnd, UINT msg, WPARAM wParam,
       }
       case WM_KEYDOWN:
       {
+        // riite: Ctrl+A selects everything and Ctrl+Backspace / Ctrl+Delete take
+        // a word, as in every other text box. Ctrl+Alt is AltGr, so it is left alone.
+        const bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) && !(GetKeyState(VK_MENU) & 0x8000);
+        if (ctrl && wParam == 'A')
+        {
+          SendMessageW(hWnd, EM_SETSEL, 0, -1);
+          return 0;
+        }
+        if (ctrl && (wParam == VK_BACK || wParam == VK_DELETE))
+        {
+          EditDeleteWord(hWnd, wParam == VK_DELETE);
+          return 0;
+        }
         if (wParam == VK_RETURN)
         {
           pGraphics->mParamEditMsg = kCommit;
