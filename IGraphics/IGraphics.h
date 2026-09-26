@@ -51,6 +51,7 @@
 
 #include "nanosvg.h"
 
+#include <atomic> // riite: mFrameRateCap
 #include <stack>
 #include <memory>
 #include <vector>
@@ -1113,6 +1114,15 @@ public:
    * @return A whole number representing the desired frame rate at which the graphics context is redrawn. NOTE: the actual frame rate might be different */
   int FPS() const { return mFPS; }
 
+  /** riite: draw at no more than this many frames a second for now, or at FPS() again
+   * with 0. Safe from any thread. Windows applies it on the next vblank; the other
+   * platforms ignore it for now.
+   * @param fps The cap, or 0 for none. A cap at or above FPS() changes nothing */
+  void SetFrameRateCap(int fps) { mFrameRateCap.store(fps > 0 ? fps : 0, std::memory_order_relaxed); }
+
+  /** riite: the cap SetFrameRateCap set, or 0 for none */
+  int FrameRateCap() const { return mFrameRateCap.load(std::memory_order_relaxed); }
+
   /** Gets the graphics context scaling factor.
    * @return The scaling applied to the graphics context */
   float GetDrawScale() const { return mDrawScale; }
@@ -1850,6 +1860,7 @@ private:
   int mWidth;
   int mHeight;
   int mFPS;
+  std::atomic<int> mFrameRateCap {0}; // riite: see SetFrameRateCap
   float mScreenScale = 1.f; // the scaling of the display that the UI is currently on e.g. 2 for retina
   float mDrawScale = 1.f; // scale deviation from  default width and height i.e stretching the UI by dragging bottom right hand corner
 

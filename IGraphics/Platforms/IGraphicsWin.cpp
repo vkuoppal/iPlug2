@@ -2169,12 +2169,15 @@ typedef NTSTATUS(WINAPI* D3DKMTWaitForVerticalBlankEvent)(const D3DKMT_WAITFORVE
 // The refresh rate is measured from the waits themselves, as the median of the last 32
 // intervals, so a missed vblank or a late wake-up cannot move it. The first 32 vblanks
 // after the editor opens are all posted.
+//
+// The rate aimed at is FPS(), or IGraphics::FrameRateCap() when that is lower, read
+// again on every vblank so that a cap set or lifted takes effect on the next one.
 namespace {
 struct VBlankPacer
 {
   static constexpr int kWindow = 32;
 
-  explicit VBlankPacer(int fps) : mFPS(fps > 0 ? fps : 60)
+  explicit VBlankPacer(const IGraphics& graphics) : mGraphics(graphics)
   {
     LARGE_INTEGER f;
     ::QueryPerformanceFrequency(&f);
@@ -2192,36 +2195,44 @@ struct VBlankPacer
       mNext = (mNext + 1) % kWindow;
       if (mFilled < kWindow)
         ++mFilled;
-      if (mFilled == kWindow && mNext == 0) // decide again once per full window
+      if (mFilled == kWindow && mNext == 0) // measure again once per full window
       {
         double sorted[kWindow];
         std::copy(std::begin(mIntervals), std::end(mIntervals), sorted);
         std::nth_element(sorted, sorted + kWindow / 2, sorted + kWindow);
-        const double period = sorted[kWindow / 2];
-        // The 0.05 lets 119.88 Hz count as 120.
-        if (period > 0.0)
-          mDivisor = std::max(1, (int) std::floor(1.0 / (period * mFPS) + 0.05));
+        mPeriod = sorted[kWindow / 2];
       }
     }
     mLast = now.QuadPart;
-    return mDivisor;
+    return mPeriod > 0.0 ? DivisorAt(mPeriod) : 1;
+  }
+
+  /** The divisor for a display refreshing every `period` seconds. The 0.05 lets
+   *  119.88 Hz count as 120. */
+  int DivisorAt(double period) const
+  {
+    const int fps = mGraphics.FPS() > 0 ? mGraphics.FPS() : 60;
+    const int cap = mGraphics.FrameRateCap();
+    const int target = (cap > 0 && cap < fps) ? cap : fps;
+    return std::max(1, (int) std::floor(1.0 / (period * target) + 0.05));
   }
 
   /** The adapter was lost: measure again from scratch, posting every vblank until then. */
-  void Reset() { mLast = 0; mFilled = 0; mNext = 0; mDivisor = 1; }
+  void Reset() { mLast = 0; mFilled = 0; mNext = 0; mPeriod = 0.0; }
 
-  int mFPS;
+  const IGraphics& mGraphics;
   double mTicksPerSec = 1.0;
   LONGLONG mLast = 0;
   double mIntervals[kWindow] = {};
-  int mNext = 0, mFilled = 0, mDivisor = 1;
+  double mPeriod = 0.0; // the measured refresh period, 0 until the first window fills
+  int mNext = 0, mFilled = 0;
 };
 } // namespace
 
 DWORD IGraphicsWin::OnVBlankRun()
 {
   SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
-  VBlankPacer pacer(FPS()); // riite
+  VBlankPacer pacer(*this); // riite
 
   // TODO: get expected vsync value.  For now we will use a fallback
   // of 60Hz
@@ -2255,6 +2266,8 @@ DWORD IGraphicsWin::OnVBlankRun()
     while (mVBlankShutdown == false)
     {
       Sleep(rateMS);
+      if (mVBlankPacing)
+        mVBlankDivisor = pacer.DivisorAt(1.0 / rateFallback); // riite: the cap still holds
       VBlankNotify();
     }
   }
@@ -2317,8 +2330,8 @@ DWORD IGraphicsWin::OnVBlankRun()
       // Temporary fallback for lost adapter or failed call.
       if (!adapterIsOpen)
       {
-        pacer.Reset(); // riite: the sleep below is already ~60 Hz
-        mVBlankDivisor = 1;
+        pacer.Reset(); // riite: the sleep below is already ~60 Hz, which only a cap lowers
+        mVBlankDivisor = mVBlankPacing ? pacer.DivisorAt(1.0 / rateFallback) : 1;
         ::Sleep(rateMS);
       }
 
