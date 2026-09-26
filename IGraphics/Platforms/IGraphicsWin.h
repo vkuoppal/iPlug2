@@ -149,6 +149,8 @@ private:
   volatile DWORD mVBlankCount = 0; // running count of vblank events since the start of the window.
   int mVBlankSkipUntil = 0; // support for skipping vblank notification if the last callback took  too long.  This helps keep the message pump clear in the case of overload.
   bool mVSYNCEnabled = false;
+  volatile int mVBlankDivisor = 1; // riite: only every Nth vblank is posted, see OnVBlankRun
+  bool mVBlankPacing = true; // riite: RIITE_FPS_CAP=off in the environment turns the pacing off
   
   const IParam* mEditParam = nullptr;
   IText mEditText;

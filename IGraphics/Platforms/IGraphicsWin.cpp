@@ -22,6 +22,7 @@
 
 #include <wininet.h>
 #include <VersionHelpers.h>
+#include <algorithm> // riite: VBlankPacer
 
 #if defined __clang__
 #undef CCSIZEOF_STRUCT
@@ -126,7 +127,10 @@ void IGraphicsWin::OnDisplayTimer(int vBlankCount)
 
     mVBlankSkipUntil = 0;
 
-    if (msgCount != curCount)
+    // riite: with only every Nth vblank posted (see OnVBlankRun), a message is stale
+    // once the next one is due, not one vblank after its own. At N = 1 this is the
+    // original test, msgCount != curCount.
+    if (curCount - msgCount >= (DWORD) mVBlankDivisor)
     {
       // we are late, just skip it until we can get a message soon after the vblank event.
       // DBGMSG("vblank is late by %i frames.  Skipping.", (mVBlankCount - msgCount));
@@ -201,7 +205,7 @@ void IGraphicsWin::OnDisplayTimer(int vBlankCount)
       {
         // Check and see if we are still in this frame.
         curCount = mVBlankCount;
-        if (msgCount != curCount)
+        if (curCount - msgCount >= (DWORD) mVBlankDivisor) // riite: this frame is N vblanks long
         {
           // we are late, skip the next vblank to give us a breather.
           mVBlankSkipUntil = curCount+1;
@@ -2093,6 +2097,11 @@ void IGraphicsWin::StartVBlankThread(HWND hWnd)
 {
   mVBlankWindow = hWnd;
   mVBlankShutdown = false;
+  mVBlankDivisor = 1;
+  // riite: RIITE_FPS_CAP=off (or 0) draws at the display's full rate again, for A/B checks.
+  wchar_t cap[8] = {};
+  const DWORD capLen = ::GetEnvironmentVariableW(L"RIITE_FPS_CAP", cap, 8);
+  mVBlankPacing = !(capLen > 0 && capLen < 8 && (_wcsicmp(cap, L"off") == 0 || wcscmp(cap, L"0") == 0));
   DWORD threadId = 0;
   mVBlankThread = ::CreateThread(NULL, 0, VBlankRun, this, 0, &threadId);
 }
@@ -2147,9 +2156,72 @@ typedef NTSTATUS(WINAPI* D3DKMTOpenAdapterFromHdc)(D3DKMT_OPENADAPTERFROMHDC* Ar
 typedef NTSTATUS(WINAPI* D3DKMTCloseAdapter)(const D3DKMT_CLOSEADAPTER* Arg1);
 typedef NTSTATUS(WINAPI* D3DKMTWaitForVerticalBlankEvent)(const D3DKMT_WAITFORVERTICALBLANKEVENT* Arg1);
 
+// riite: FRAME PACING ON FAST DISPLAYS. Every posted WM_VBLANK paints, so a 144 Hz
+// monitor got 144 frames a second whatever FPS() said. Measured on Mycelia's synth page
+// at 143 Hz: 142 -> 72 fps, editor CPU 39 -> 22 % of a core idle, GPU 8.6 -> 4.3 %
+// (colorapp/PERFORMANCE_AUDIT.md U2).
+//
+// Only every Nth vblank is posted, N being the largest whole number that keeps the rate
+// at or above FPS(): 2 at 120 and 144 Hz (60 and 72 fps), 2 at 165 (82.5), 4 at 240, and
+// 1 at 60, 75, 90 and 100 Hz, which stay as they were. Whole vblanks keep the frames
+// evenly spaced; pacing by the clock alternates 2- and 3-vblank gaps at 144 Hz.
+//
+// The refresh rate is measured from the waits themselves, as the median of the last 32
+// intervals, so a missed vblank or a late wake-up cannot move it. The first 32 vblanks
+// after the editor opens are all posted.
+namespace {
+struct VBlankPacer
+{
+  static constexpr int kWindow = 32;
+
+  explicit VBlankPacer(int fps) : mFPS(fps > 0 ? fps : 60)
+  {
+    LARGE_INTEGER f;
+    ::QueryPerformanceFrequency(&f);
+    mTicksPerSec = (double) f.QuadPart;
+  }
+
+  /** Call after each vblank wait returns; gives the divisor to post with. */
+  int OnVBlank()
+  {
+    LARGE_INTEGER now;
+    ::QueryPerformanceCounter(&now);
+    if (mLast != 0)
+    {
+      mIntervals[mNext] = (double) (now.QuadPart - mLast) / mTicksPerSec;
+      mNext = (mNext + 1) % kWindow;
+      if (mFilled < kWindow)
+        ++mFilled;
+      if (mFilled == kWindow && mNext == 0) // decide again once per full window
+      {
+        double sorted[kWindow];
+        std::copy(std::begin(mIntervals), std::end(mIntervals), sorted);
+        std::nth_element(sorted, sorted + kWindow / 2, sorted + kWindow);
+        const double period = sorted[kWindow / 2];
+        // The 0.05 lets 119.88 Hz count as 120.
+        if (period > 0.0)
+          mDivisor = std::max(1, (int) std::floor(1.0 / (period * mFPS) + 0.05));
+      }
+    }
+    mLast = now.QuadPart;
+    return mDivisor;
+  }
+
+  /** The adapter was lost: measure again from scratch, posting every vblank until then. */
+  void Reset() { mLast = 0; mFilled = 0; mNext = 0; mDivisor = 1; }
+
+  int mFPS;
+  double mTicksPerSec = 1.0;
+  LONGLONG mLast = 0;
+  double mIntervals[kWindow] = {};
+  int mNext = 0, mFilled = 0, mDivisor = 1;
+};
+} // namespace
+
 DWORD IGraphicsWin::OnVBlankRun()
 {
   SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+  VBlankPacer pacer(FPS()); // riite
 
   // TODO: get expected vsync value.  For now we will use a fallback
   // of 60Hz
@@ -2236,11 +2308,17 @@ DWORD IGraphicsWin::OnVBlankRun()
           (*pClose)(&ca);
           adapterIsOpen = false;
         }
+        else if (mVBlankPacing)
+        {
+          mVBlankDivisor = pacer.OnVBlank(); // riite
+        }
       }
 
       // Temporary fallback for lost adapter or failed call.
       if (!adapterIsOpen)
       {
+        pacer.Reset(); // riite: the sleep below is already ~60 Hz
+        mVBlankDivisor = 1;
         ::Sleep(rateMS);
       }
 
@@ -2271,6 +2349,10 @@ DWORD IGraphicsWin::OnVBlankRun()
 void IGraphicsWin::VBlankNotify()
 {
   mVBlankCount++;
+  // riite: post only every Nth vblank (see VBlankPacer).
+  const DWORD n = (DWORD) mVBlankDivisor;
+  if (n > 1 && (mVBlankCount % n) != 0)
+    return;
   ::PostMessageW(mVBlankWindow, WM_VBLANK, mVBlankCount, 0);
 }
 
