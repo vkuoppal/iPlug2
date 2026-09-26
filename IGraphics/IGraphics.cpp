@@ -1919,7 +1919,10 @@ void IGraphics::RetainBitmap(const IBitmap& bitmap, const char* cacheName)
 
 IBitmap IGraphics::ScaleBitmap(const IBitmap& inBitmap, const char* name, int scale)
 {
-  int screenScale = GetRoundedScreenScale();
+  // Saved exactly: a fractional screen scale (an Android phone's 1.77) came
+  // back rounded to 2 here, and every later frame drew at 2 into a surface
+  // sized for 1.77, which cut off the bottom and right of the UI.
+  float screenScale = GetScreenScale();
   float drawScale = GetDrawScale();
 
   mScreenScale = scale;
