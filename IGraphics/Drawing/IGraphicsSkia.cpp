@@ -64,6 +64,8 @@
     #pragma comment(lib, "skunicode_icu.lib")
   #endif
 
+#elif defined __ANDROID__
+  #include "include/ports/SkFontMgr_empty.h"
 
 #endif
 
@@ -77,6 +79,9 @@
   #elif defined OS_WIN
     #include "include/gpu/ganesh/gl/win/GrGLMakeWinInterface.h"
     #pragma comment(lib, "opengl32.lib")
+  #elif defined __ANDROID__
+    #include <GLES3/gl3.h>
+    #include "include/gpu/ganesh/gl/egl/GrGLMakeEGLInterface.h"
   #endif
 
 #endif
@@ -302,6 +307,9 @@ static sk_sp<SkFontMgr> SFontMgrFactory()
   return SkFontMgr_New_CoreText(nullptr);
 #elif defined OS_WIN
   return SkFontMgr_New_DirectWrite();
+#elif defined __ANDROID__
+  // No system font lookup: an Android host loads every font it draws from data.
+  return SkFontMgr_New_Custom_Empty();
 #else
   #error "Not supported"
 #endif
@@ -421,6 +429,8 @@ void IGraphicsSkia::OnViewInitialized(void* pContext)
   auto glInterface = GrGLInterfaces::MakeMac();
 #elif defined OS_WIN
   auto glInterface = GrGLInterfaces::MakeWin();
+#elif defined __ANDROID__
+  auto glInterface = GrGLInterfaces::MakeEGL();
 #endif
   mGrContext = GrDirectContexts::MakeGL(glInterface);
 #elif defined IGRAPHICS_METAL

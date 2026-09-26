@@ -72,7 +72,9 @@ typedef union { double f; WDL_UINT64   int64; } WDL_EndianDouble;
 	#error Unsupported endian
 #endif
 
-#if !defined(__EMSCRIPTEN__)
+// Clang defines no __FLOAT_WORD_ORDER__; every Android ABI stores floats in
+// its byte order.
+#if !defined(__EMSCRIPTEN__) && !defined(__ANDROID__)
   #if __FLOAT_WORD_ORDER__ != __BYTE_ORDER__
     #error Unsupported float endian
   #endif
@@ -121,8 +123,9 @@ typedef union { double f; WDL_UINT64   int64; } WDL_EndianDouble;
 #endif
 
 
-// GNU C
-#elif __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 3)
+// GNU C (and the NDK's clang, which reports GCC 4.2 but has the builtins;
+// bionic has no BSD bswap16 for the Linux branch below)
+#elif __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 3) || defined(__ANDROID__)
 #define WDL_bswap32(x) __builtin_bswap32(x)
 #define WDL_bswap64(x) __builtin_bswap64(x)
 

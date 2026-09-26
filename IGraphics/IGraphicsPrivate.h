@@ -75,7 +75,11 @@
   #define FONT_DESCRIPTOR_TYPE HFONT
 #elif defined OS_WEB
   #define FONT_DESCRIPTOR_TYPE std::pair<WDL_String, WDL_String>*
-#else 
+#elif defined __ANDROID__
+  // Android has no platform font descriptor: fonts load from data through
+  // IGraphicsSkia's custom font manager.
+  #define FONT_DESCRIPTOR_TYPE void*
+#else
   // NO_IGRAPHICS
 #endif
 

@@ -28,7 +28,7 @@
     #define IGRAPHICS_GL
     #if defined OS_IOS
       #include <libGLESv2/angle_gl.h>
-    #elif defined OS_WEB
+    #elif defined OS_WEB || defined __ANDROID__
       #include <GLES3/gl3.h>
     #endif
   #elif defined IGRAPHICS_GL2 || defined IGRAPHICS_GL3
