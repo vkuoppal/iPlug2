@@ -69,6 +69,10 @@ public:
   /** DisplayFunc allows custom parameter display functions, defined by a lambda matching this signature */
   using DisplayFunc = std::function<void(double, WDL_String&)>;
 
+  /** DisplayParseFunc reads a real value back out of display text: the inverse of a DisplayFunc that a plain number cannot reverse.
+   * Return false if the text cannot be read, and the parameter keeps its current value */
+  using DisplayParseFunc = std::function<bool(const char*, double&)>;
+
 #pragma mark - Shape
 
   /** Base struct for parameter shaping */
@@ -341,6 +345,10 @@ public:
    * @param func A function conforming to DisplayFunc */
   void SetDisplayFunc(DisplayFunc func) { mDisplayFunction = func; }
 
+  /** Set the function StringToValue uses to read typed text, the inverse of the DisplayFunc
+   * @param func A function conforming to DisplayParseFunc */
+  void SetDisplayParseFunc(DisplayParseFunc func) { mDisplayParseFunction = func; }
+
   /** Gets a readable value of the parameter
    * @return double Current value of the parameter */
   double Value() const { return mValue.load(); }
@@ -527,6 +535,7 @@ private:
   
   std::unique_ptr<Shape> mShape;
   DisplayFunc mDisplayFunction = nullptr;
+  DisplayParseFunc mDisplayParseFunction = nullptr;
 
   WDL_TypedBuf<DisplayText> mDisplayTexts;
 } WDL_FIXALIGN;

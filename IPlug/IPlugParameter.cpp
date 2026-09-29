@@ -156,6 +156,7 @@ void IParam::InitDouble(const char* name, double defaultVal, double minVal, doub
   mUnit = unit;
   mFlags = flags;
   mDisplayFunction = displayFunc;
+  mDisplayParseFunction = nullptr;
 
   Set(defaultVal);
   
@@ -236,6 +237,7 @@ void IParam::Init(const IParam& p, const char* searchStr, const char* replaceStr
   }
   
   InitDouble(str.Get(), p.mDefault, p.mMin, p.mMax, p.mStep, p.mLabel, p.mFlags, group.Get(), *p.mShape, p.mUnit, p.mDisplayFunction);
+  mDisplayParseFunction = p.mDisplayParseFunction;
   
   for (auto i=0; i<p.NDisplayTexts(); i++)
   {
@@ -358,6 +360,16 @@ bool IParam::MapDisplayText(const char* str, double* pValue) const
 double IParam::StringToValue(const char* str) const
 {
   double v = 0.;
+
+  // A DisplayFunc wins over display texts in GetDisplay, so its inverse reads the text first
+  if (mDisplayParseFunction != nullptr)
+  {
+    if (!mDisplayParseFunction(str, v))
+      v = Value();
+
+    return Constrain(v);
+  }
+
   bool mapped = (bool) NDisplayTexts();
 
   if (mapped)
