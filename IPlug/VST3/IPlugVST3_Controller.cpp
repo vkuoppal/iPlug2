@@ -100,7 +100,8 @@ tresult PLUGIN_API IPlugVST3Controller::setParamNormalized(ParamID tag, ParamVal
 
 tresult PLUGIN_API IPlugVST3Controller::getMidiControllerAssignment(int32 busIndex, int16 midiChannel, CtrlNumber midiCCNumber, ParamID& tag)
 {
-  if (busIndex == 0 && midiChannel < VST3_NUM_CC_CHANS)
+  // Controller numbers from kCountCtrlNumber up are output-only (LegacyMIDICCOutEvent) and have no CC parameter
+  if (busIndex == 0 && midiChannel >= 0 && midiChannel < VST3_NUM_CC_CHANS && midiCCNumber >= 0 && midiCCNumber < kCountCtrlNumber)
   {
     tag = kMIDICCParamStartIdx + (midiChannel * kCountCtrlNumber) + midiCCNumber;
     return kResultTrue;
