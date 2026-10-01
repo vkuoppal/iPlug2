@@ -18,6 +18,8 @@
 #include "include/effects/SkDashPathEffect.h"
 #include "include/effects/SkGradientShader.h"
 #include "include/effects/SkImageFilters.h"
+#include "include/core/SkPicture.h"            // riite: BeginRecording
+#include "include/core/SkPictureRecorder.h"
 
 #if !defined IGRAPHICS_NO_SKIA_SKPARAGRAPH
 #include "modules/skparagraph/include/FontCollection.h"
@@ -1034,7 +1036,60 @@ APIBitmap* IGraphicsSkia::CreateAPIBitmap(int width, int height, float scale, do
 
 void IGraphicsSkia::UpdateLayer()
 {
+  if (mLayers.empty() && mRecordingCanvas) { mCanvas = mRecordingCanvas; return; }   // riite: a layer ended inside a recording
   mCanvas = mLayers.empty() ? mSurface->getCanvas() : mLayers.top()->GetAPIBitmap()->GetBitmap()->mSurface->getCanvas();
+}
+
+// riite: BeginRecording / EndRecording / DrawRecording (IGraphics.h). Every drawing call
+// here goes through mCanvas, so pointing it at an SkPictureRecorder records them as they
+// are. The recording is in device space: the canvas's total matrix at the start rides
+// with it and seeds the recorder, and absolute setMatrix calls (PathTransformSetMatrix,
+// SetClipRegion) land as they would have. So it can only be drawn back on that matrix.
+namespace
+{
+  struct SkiaRecording : IGraphics::IRecording
+  {
+    sk_sp<SkPicture> picture;
+    SkMatrix base;
+  };
+}
+
+bool IGraphicsSkia::BeginRecording()
+{
+  if (mRecorder || !mCanvas) return false;
+  mRecorder = std::make_unique<SkPictureRecorder>();
+  const SkISize size = mCanvas->getBaseLayerSize();
+  mRecordingBase = mCanvas->getTotalMatrix();
+  mCanvasBeforeRecording = mCanvas;
+  mRecordingCanvas = mRecorder->beginRecording(SkRect::MakeIWH(size.width(), size.height()));
+  mRecordingCanvas->setMatrix(mRecordingBase);
+  mCanvas = mRecordingCanvas;
+  return true;
+}
+
+IGraphics::IRecordingPtr IGraphicsSkia::EndRecording()
+{
+  if (!mRecorder) return nullptr;
+  auto recording = std::make_shared<SkiaRecording>();
+  recording->picture = mRecorder->finishRecordingAsPicture();
+  recording->base = mRecordingBase;
+  mRecorder.reset();
+  mRecordingCanvas = nullptr;
+  mCanvas = mCanvasBeforeRecording;   // untouched while recording: still on the base matrix
+  mCanvasBeforeRecording = nullptr;
+  return recording;
+}
+
+bool IGraphicsSkia::DrawRecording(const IRecordingPtr& recording)
+{
+  const auto* r = static_cast<const SkiaRecording*>(recording.get());
+  if (!r || !r->picture || !mCanvas || mRecorder) return false;
+  if (mCanvas->getTotalMatrix() != r->base) return false;
+  mCanvas->save();
+  mCanvas->resetMatrix();             // the picture carries its own, absolute
+  mCanvas->drawPicture(r->picture);
+  mCanvas->restore();
+  return true;
 }
 
 static size_t CalcRowBytes(int width)

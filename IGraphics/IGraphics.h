@@ -373,6 +373,23 @@ public:
    * See draw class implementation headers (e.g. IGraphicsNanoVG.h) for what you can cast the void pointer to */
   virtual void* GetDrawContext() = 0;
 
+  /** riite: a recording of drawing calls, replayable as the calls themselves (same blend
+   * modes, same filters), for a control whose picture is costly to work out and is often
+   * repainted unchanged, e.g. under a neighbour's redraw. Opaque; the backend owns it. */
+  class IRecording { public: virtual ~IRecording() = default; };
+  using IRecordingPtr = std::shared_ptr<IRecording>;
+
+  /** riite: from here until EndRecording, drawing is recorded instead of drawn.
+   * @return false if this backend cannot record (draw directly instead). No nesting */
+  virtual bool BeginRecording() { return false; }
+
+  /** riite: ends BeginRecording's recording and returns it, nothing drawn yet */
+  virtual IRecordingPtr EndRecording() { return nullptr; }
+
+  /** riite: draws a recording where it was recorded.
+   * @return false if it cannot be drawn as recorded (the canvas's transform has changed since, e.g. a resize): record again */
+  virtual bool DrawRecording(const IRecordingPtr& recording) { return false; }
+
   /** @return A CString representing the Drawing API in use e.g. "NanoVG" */
   virtual const char* GetDrawingAPIStr() = 0;
   

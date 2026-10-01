@@ -25,6 +25,8 @@ namespace skia::textlayout {
 class FontCollection;
 }
 
+class SkPictureRecorder;
+
 BEGIN_IPLUG_NAMESPACE
 BEGIN_IGRAPHICS_NAMESPACE
 
@@ -127,6 +129,10 @@ public:
   IColor GetPoint(int x, int y) override;
   void* GetDrawContext() override { return (void*) mCanvas; }
 
+  bool BeginRecording() override;
+  IRecordingPtr EndRecording() override;
+  bool DrawRecording(const IRecordingPtr& recording) override;
+
   bool BitmapExtSupported(const char* ext) override;
   int AlphaChannel() const override { return 3; }
   bool FlippedBitmap() const override { return false; }
@@ -160,6 +166,10 @@ private:
     
   sk_sp<SkSurface> mSurface;
   SkCanvas* mCanvas = nullptr;
+  std::unique_ptr<SkPictureRecorder> mRecorder;  // riite: BeginRecording, while one is open
+  SkCanvas* mRecordingCanvas = nullptr;
+  SkCanvas* mCanvasBeforeRecording = nullptr;
+  SkMatrix mRecordingBase;
   bool mLCDText = false;
   SkPath mMainPath;
   SkMatrix mMatrix;
