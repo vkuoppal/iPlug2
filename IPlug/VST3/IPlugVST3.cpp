@@ -56,6 +56,15 @@ tresult PLUGIN_API IPlugVST3::initialize(FUnknown* context)
     IPlugVST3GetHost(this, context);
     OnHostIdentified();
     OnParamReset(kReset);
+
+    // The single-component VST3 owns both processor and controller parameter state. A plug-in
+    // may establish a non-default boot program in its constructor (R8's factory bank does), so
+    // initialise the controller from the live IParam values after reset. The separate-controller
+    // implementation already performs this synchronization in IPlugVST3_Controller.cpp.
+    // Leaving valueNormalized at IPlugVST3Parameter's declared default makes an untouched host
+    // gesture able to reassert stale values even though the editor displays the live program.
+    for (int i = 0; i < NParams(); ++i)
+      IPlugVST3ControllerBase::SetVST3ParamNormalized(i, GetParam(i)->GetNormalized());
     
     return kResultOk;
   }
