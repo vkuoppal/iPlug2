@@ -39,6 +39,10 @@ public:
 
     if (pParam->GetCanAutomate()) flags |= Steinberg::Vst::ParameterInfo::kCanAutomate;
     if (pParam->Type() == IParam::kTypeEnum) flags |= Steinberg::Vst::ParameterInfo::kIsList;
+    // riite: the SDK's kIsHidden "implies that kCanAutomate is NOT set and kIsReadOnly is set"
+    if (pParam->GetHidden())
+      flags = (flags & ~Steinberg::Vst::ParameterInfo::kCanAutomate)
+            | Steinberg::Vst::ParameterInfo::kIsHidden | Steinberg::Vst::ParameterInfo::kIsReadOnly;
 
     info.defaultNormalizedValue = valueNormalized = pParam->ToNormalized(pParam->GetDefault());
     info.flags = flags;

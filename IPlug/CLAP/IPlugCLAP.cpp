@@ -455,7 +455,10 @@ bool IPlugCLAP::paramsInfo(uint32_t paramIdx, clap_param_info* pInfo) const noex
     flags |= CLAP_PARAM_IS_STEPPED;
   if (pParam->GetCanAutomate())
     flags |= CLAP_PARAM_IS_AUTOMATABLE;
-  
+  // riite: kFlagHidden - not shown, not changed, not automated by the host
+  if (pParam->GetHidden())
+    flags = (flags & ~CLAP_PARAM_IS_AUTOMATABLE) | CLAP_PARAM_IS_HIDDEN | CLAP_PARAM_IS_READONLY;
+
   pInfo->id = paramIdx;
   pInfo->flags = flags;
   pInfo->cookie = nullptr;

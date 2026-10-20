@@ -55,7 +55,13 @@ public:
     kFlagSignDisplay      = 0x8,
     /** Indicates that the parameter may influence the state of other parameters */
     kFlagMeta             = 0x10,
+    /** riite: Indicates that the host should not show the parameter at all, nor change
+     * or automate it (VST3 kIsHidden + kIsReadOnly, CLAP IS_HIDDEN + IS_READONLY). For a
+     * placeholder that keeps later indices where saved state expects them. */
+    kFlagHidden           = 0x20,
   };
+  /** riite: lets code that also builds against stock iPlug2 test for kFlagHidden. */
+  #define IPLUG_PARAM_FLAG_HIDDEN 1
   
   /** IDs for the shapes */
   enum EShapeIDs
@@ -497,6 +503,9 @@ public:
 
   /** @return \c true If the parameter is flagged as a "meta" parameter, e.g. one that could modify other parameters */
   bool GetMeta() const { return mFlags & kFlagMeta; }
+
+  /** riite: @return \c true if the parameter is hidden from the host (kFlagHidden) */
+  bool GetHidden() const { return mFlags & kFlagHidden; }
   
   /** @return Shape ID */
   EShapeIDs GetShapeID() const;
