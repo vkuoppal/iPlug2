@@ -122,6 +122,9 @@ public:
   void SetShiftForSubmenus(float distance) { mMenuShift = distance; }
   /** If set true, the menu (kNorth) is forced to appear below it's control(kSouth) when it would normally be above - only if there is room for it. */
   void SetMenuForcedSouth(bool isForcedSouth) { mForcedSouth = isForcedSouth;}
+  /** riite: padding above and below each cell's text, so a row can be taller than its
+   * line (a finger's target: the rows were as tall as the text) */
+  void SetCellVerticalPadding(float pad) { mCellVPad = pad; }
 
   /** Call this to create a pop-up menu
    * @param menu Reference to a menu from which to populate this user interface control. NOTE: this object should not be a temporary, otherwise when the menu returns asynchronously, it may not exist.
@@ -240,6 +243,7 @@ protected:
   bool mSubMenuOpened = false; // Is set true when a submenu panel is open and false when menu is collapsed.
 
   float mCellGap = 2.f; // The gap between cells in pixels
+  float mCellVPad = 0.f; // riite: padding above and below a cell's text (SetCellVerticalPadding)
   float mSeparatorSize = 2.; // The size in pixels of a separator. This could be width or height
   float mRoundness = 5.f; // The roundness of the corners of the menu panel backgrounds
   float mDropShadowSize = 10.f; // The size in pixels of the drop shadow

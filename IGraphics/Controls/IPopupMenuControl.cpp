@@ -172,6 +172,21 @@ void IPopupMenuControl::OnMouseDown(float x, float y, const IMouseMod& mod)
 {
   if(GetState() == kExpanded)
   {
+    // riite: a finger has no hover, and only a hover opened a submenu or reached an open
+    // one's panel, so a tap on a submenu's row closed the menu with nothing chosen. A
+    // touch does first what the pointer's hover would have done; a tap on a row with a
+    // submenu then opens it and leaves the menu up.
+    if (mod.IsTouch())
+    {
+      OnMouseOver(x, y, mod);
+      if (mActiveMenuPanel && mMouseCellBounds)
+      {
+        const int cell = mActiveMenuPanel->mCellBounds.Find(mMouseCellBounds);
+        IPopupMenu::Item* pItem = cell >= 0 ? mActiveMenuPanel->mMenu.GetItem(mActiveMenuPanel->mScrollItemOffset + cell) : nullptr;
+        if (pItem && pItem->GetSubmenu())
+          return;
+      }
+    }
     mMouseCellBounds = mActiveMenuPanel->HitTestCells(x, y);
     CollapseEverything();
   }
@@ -473,7 +488,7 @@ IRECT IPopupMenuControl::GetLargestCellRectForMenu(IPopupMenu& menu, float x, fl
   }
   
   span.HPad(TEXT_HPAD); // add some padding because we don't want to be flush to the edges
-  span.Pad(TICK_SIZE, 0, ARROW_SIZE, 0);
+  span.Pad(TICK_SIZE, mCellVPad, ARROW_SIZE, mCellVPad); // riite: mCellVPad
   
   return IRECT(x, y, x + span.W(), y + span.H());
 }
