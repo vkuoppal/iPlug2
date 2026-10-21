@@ -337,6 +337,7 @@ extern StaticStorage<CoreTextFontDescriptor> sFontDescriptorCache;
   UITouch* pTouch;
   
   std::vector<IMouseInfo> points;
+  std::vector<NSUInteger> taps; // riite: each point's tapCount
 
   while ((pTouch = [pEnumerator nextObject]))
   {
@@ -362,13 +363,28 @@ extern StaticStorage<CoreTextFontDescriptor> sFontDescriptorCache;
       mPrevX = point.x;
       mPrevY = point.y;
       points.push_back(point);
+      taps.push_back([pTouch tapCount]);
     }
   }
 
 //  DBGMSG("%lu\n", points[0].ms.idx);
   
   if(eventType == ETouchEvent::Began)
-    mGraphics->OnMouseDown(points);
+  {
+    // riite: the second tap of a quick pair is a double-click, as the Mac's clickCount
+    // makes the second click one (and the fourth, and so on). iOS had none at all, so
+    // nothing that adds or resets on a double-click could be reached by a finger.
+    std::vector<IMouseInfo> presses;
+    for (size_t i = 0; i < points.size(); ++i)
+    {
+      if (taps[i] > 1 && (taps[i] - 1) % 2)
+        mGraphics->OnTouchDoubleTap(points[i]);
+      else
+        presses.push_back(points[i]);
+    }
+    if (!presses.empty())
+      mGraphics->OnMouseDown(presses);
+  }
   
   if(eventType == ETouchEvent::Moved)
     mGraphics->OnMouseDrag(points);

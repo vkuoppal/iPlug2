@@ -1264,6 +1264,20 @@ bool IGraphics::OnMouseDblClick(float x, float y, const IMouseMod& mod)
   return pControl;
 }
 
+void IGraphics::OnTouchDoubleTap(const IMouseInfo& point)
+{
+  IControl* pControl = GetMouseControl(point.x, point.y, false, false, point.ms.touchID);
+
+  if (!pControl || pControl->GetMouseDblAsSingleClick())
+  {
+    OnMouseDown(std::vector<IMouseInfo> {point});
+    return;
+  }
+
+  if (GetMouseControl(point.x, point.y, true, false, point.ms.touchID) == pControl)
+    pControl->OnMouseDblClick(point.x, point.y, point.ms);
+}
+
 bool IGraphics::OnMouseWheel(float x, float y, const IMouseMod& mod, float d)
 {
   IControl* pControl = GetMouseControl(x, y, false);

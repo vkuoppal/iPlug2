@@ -1670,6 +1670,14 @@ public:
    * drawable, since that wait blocks the main thread and every touch behind it. */
   virtual int FramesInFlight() const { return 0; }
 
+  /** riite: a touch that is the second tap of a quick pair, from a platform that counts
+   * taps (iOS). The control under it gets OnMouseDblClick, held by this touch alone so
+   * its drag and lift come to it, or the press itself when it asks for double-clicks as
+   * single clicks (SetMouseDblAsSingleClick), as a keyboard's keys must. Unlike
+   * OnMouseDblClick it releases no other finger's control.
+   * @param point The touch */
+  void OnTouchDoubleTap(const IMouseInfo& point);
+
   /** @param enable Set \c true if you want to handle mouse over messages. Note: this may increase the amount CPU usage if you redraw on mouse overs etc */
   void EnableMouseOver(bool enable) { mEnableMouseOver = enable; }
 
