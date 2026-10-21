@@ -1299,7 +1299,11 @@ private:
   void DoCreatePopupMenu(IControl& control, IPopupMenu& menu, const IRECT& bounds, int valIdx, bool isContext);
   void EndMouseGesture(ITouchID touchID);
   void EndPopupMenuGesture();
-  
+  /** riite: the right button's, while OnTouchLongPress holds this touch */
+  void LongPressButtons(IMouseMod& mod) const;
+  /** riite: a touch lifted or cancelled: what was kept for its long press goes */
+  void ForgetTouch(ITouchID touchID);
+
   /** Called by ICornerResizer when drag resize commences */
   void StartDragResize() { mResizingInProcess = true; }
   
@@ -1678,6 +1682,16 @@ public:
    * @param point The touch */
   void OnTouchDoubleTap(const IMouseInfo& point);
 
+  /** riite: a finger held still from a platform that times holds (iOS), as a right-click for
+   * the control holding it when that control's WantsLongPress says so. Its press is undone:
+   * values it moved go back and the control gets OnTouchCancelled. Then the right button's
+   * press follows at the same point, and the finger's later moves and lift come with the
+   * right button rather than the left. A finger with nothing under it, or whose control
+   * does not want it, goes on as the press it was.
+   * @param point The touch, where it is now
+   * @return \c true if the hold was taken as a right-click */
+  bool OnTouchLongPress(const IMouseInfo& point);
+
   /** @param enable Set \c true if you want to handle mouse over messages. Note: this may increase the amount CPU usage if you redraw on mouse overs etc */
   void EnableMouseOver(bool enable) { mEnableMouseOver = enable; }
 
@@ -1928,6 +1942,9 @@ private:
   std::unordered_map<ITouchID, IControl*> mCapturedMap; // associative array of touch ids to control pointers, the same control can be touched multiple times
   // Keep the IDs actually begun: callbacks can rebind or remove the control.
   std::unordered_map<ITouchID, std::vector<int>> mMouseDownParams;
+  // riite: a touch's control's values when it landed, which a long press puts back
+  std::unordered_map<ITouchID, std::vector<double>> mMouseDownValues;
+  std::vector<ITouchID> mLongPresses; // riite: touches taken by OnTouchLongPress, until they lift
   std::vector<int> mPopupMenuParams;
   IControl* mMouseOver = nullptr;
   IControl* mInTextEntry = nullptr;

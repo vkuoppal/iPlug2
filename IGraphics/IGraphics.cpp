@@ -1082,7 +1082,13 @@ void IGraphics::OnMouseDown(const std::vector<IMouseInfo>& points)
       // asked, and the host menu stays exactly where it was.
       if (mod.R && paramIdx > kNoParameter && !pCapturedControl->WantsRightClick())
       {
-        ReleaseMouseCapture();
+        if (mod.IsTouch()) // riite: a long press's finger only, as DoCreatePopupMenu
+        {
+          mCapturedMap.erase(mod.touchID);
+          EndMouseGesture(mod.touchID);
+        }
+        else
+          ReleaseMouseCapture();
         PopupHostContextMenuForParam(pCapturedControl, paramIdx, x, y);
         return;
       }
@@ -1099,6 +1105,15 @@ void IGraphics::OnMouseDown(const std::vector<IMouseInfo>& points)
       for (int begunParamIdx : params)
         GetDelegate()->BeginInformHostOfParamChangeFromUI(begunParamIdx);
 
+      // riite: what a finger's press may move, for a long press to put back
+      if (mod.IsTouch())
+      {
+        std::vector<double> values;
+        for (int v = 0; v < nVals; v++)
+          values.push_back(pCapturedControl->GetValue(v));
+        mMouseDownValues[mod.touchID] = values;
+      }
+
       pCapturedControl->OnMouseDown(x, y, mod);
     }
   }
@@ -1114,7 +1129,8 @@ void IGraphics::OnMouseUp(const std::vector<IMouseInfo>& points)
     {
       float x = point.x;
       float y = point.y;
-      const IMouseMod& mod = point.ms;
+      IMouseMod mod = point.ms;
+      LongPressButtons(mod);
       auto itr = mCapturedMap.find(mod.touchID);
       
       if(itr != mCapturedMap.end())
@@ -1128,6 +1144,9 @@ void IGraphics::OnMouseUp(const std::vector<IMouseInfo>& points)
       }
     }
   }
+
+  for (auto& point : points)
+    ForgetTouch(point.ms.touchID);
 
   if (mResizingInProcess)
   {
@@ -1162,6 +1181,9 @@ void IGraphics::OnTouchCancelled(const std::vector<IMouseInfo>& points)
       }
     }
   }
+
+  for (auto& point : points)
+    ForgetTouch(point.ms.touchID);
 }
 
 bool IGraphics::OnMouseOver(float x, float y, const IMouseMod& mod)
@@ -1217,6 +1239,7 @@ void IGraphics::OnMouseDrag(const std::vector<IMouseInfo>& points)
       float dX = point.dX;
       float dY = point.dY;
       IMouseMod mod = point.ms;
+      LongPressButtons(mod);
       
       auto itr = mCapturedMap.find(mod.touchID);
       
@@ -1276,6 +1299,58 @@ void IGraphics::OnTouchDoubleTap(const IMouseInfo& point)
 
   if (GetMouseControl(point.x, point.y, true, false, point.ms.touchID) == pControl)
     pControl->OnMouseDblClick(point.x, point.y, point.ms);
+}
+
+bool IGraphics::OnTouchLongPress(const IMouseInfo& point)
+{
+  const ITouchID touchID = point.ms.touchID;
+  auto itr = mCapturedMap.find(touchID);
+
+  if (itr == mCapturedMap.end() || !itr->second->WantsLongPress(point.x, point.y))
+    return false;
+
+  // The press did not happen: whatever it set goes back, inside the host gesture it
+  // opened, and the control ends it as a cancelled touch. A segment or a switch that
+  // acts as the finger lands would otherwise be left changed by a request for its menu.
+  IControl* pControl = itr->second;
+  auto values = mMouseDownValues.find(touchID);
+  if (values != mMouseDownValues.end())
+  {
+    for (int v = 0; v < pControl->NVals() && v < (int) values->second.size(); v++)
+    {
+      if (pControl->GetValue(v) != values->second[v])
+      {
+        pControl->SetValue(values->second[v], v);
+        pControl->SetDirty(true, v);
+      }
+    }
+    mMouseDownValues.erase(values);
+  }
+  pControl->OnTouchCancelled(point.x, point.y, point.ms);
+  mCapturedMap.erase(touchID);
+  EndMouseGesture(touchID);
+
+  IMouseInfo right = point;
+  right.ms.L = false;
+  right.ms.R = true;
+  mLongPresses.push_back(touchID);
+  OnMouseDown(std::vector<IMouseInfo> {right});
+  return true;
+}
+
+void IGraphics::LongPressButtons(IMouseMod& mod) const
+{
+  if (std::find(mLongPresses.begin(), mLongPresses.end(), mod.touchID) != mLongPresses.end())
+  {
+    mod.L = false;
+    mod.R = true;
+  }
+}
+
+void IGraphics::ForgetTouch(ITouchID touchID)
+{
+  mMouseDownValues.erase(touchID);
+  mLongPresses.erase(std::remove(mLongPresses.begin(), mLongPresses.end(), touchID), mLongPresses.end());
 }
 
 bool IGraphics::OnMouseWheel(float x, float y, const IMouseMod& mod, float d)
@@ -1361,6 +1436,7 @@ void IGraphics::EndPopupMenuGesture()
 void IGraphics::ReleaseMouseCapture()
 {
   mCapturedMap.clear();
+  mMouseDownValues.clear();
   decltype(mMouseDownParams) gestures;
   gestures.swap(mMouseDownParams);
   for (const auto& gesture : gestures)
@@ -2042,7 +2118,34 @@ void IGraphics::DoCreatePopupMenu(IControl& control, IPopupMenu& menu, const IRE
       mMouseDownParams.erase(itr);
     }
   }
-  ReleaseMouseCapture();
+  // riite: the menu takes the mouse and the fingers on the control that opened it, and no
+  // others. Releasing every capture cut off a finger held elsewhere, so a key held on a
+  // keyboard while a menu opened never heard its lift and its note never ended. A finger
+  // the menu does take is cancelled for its control, which will not hear its lift either
+  // and may be counting it as down.
+  std::vector<std::pair<ITouchID, IControl*>> released;
+  for (auto it = mCapturedMap.begin(); it != mCapturedMap.end();)
+  {
+    if (it->second == &control || !it->first)
+    {
+      released.push_back(*it);
+      it = mCapturedMap.erase(it);
+    }
+    else
+      ++it;
+  }
+  for (const auto& capture : released)
+  {
+    EndMouseGesture(capture.first);
+    if (capture.first)
+    {
+      IMouseMod mod(true);
+      mod.touchID = capture.first;
+      capture.second->OnTouchCancelled(mMouseDownX, mMouseDownY, mod);
+    }
+  }
+  if (mCursorHidden)
+    HideMouseCursor(false);
     
   mInPopupMenu = &control;
   mPopupMenuValIdx = valIdx;

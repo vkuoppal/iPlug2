@@ -105,6 +105,16 @@ public:
    * @return \c true if this control handles the right button */
   virtual bool WantsRightClick() const { return false; }
 
+  /** riite: whether a finger held still at this point is a right-click here (see
+   * IGraphics::OnTouchLongPress). Asked once, half a second after the press began, while it
+   * is still this control's. Defaults to WantsRightClick, the controls that open their own
+   * menu on the right button. Override for a control whose right button acts elsewhere, and
+   * answer false where a hold already means something (a held arrow repeating, a drag
+   * waiting to start) or where the press has already acted in a way that cannot be undone.
+   * The press is ended with OnTouchCancelled before the right button's arrives.
+   * @return \c true if a long press here should be the right button's press */
+  virtual bool WantsLongPress(float x, float y) const { return WantsRightClick(); }
+
 /** Implement this method to respond to a mouse up event on this control. 
    * @param x The X coordinate of the mouse event
    * @param y The Y coordinate of the mouse event

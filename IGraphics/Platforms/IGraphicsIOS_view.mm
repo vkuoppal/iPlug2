@@ -368,6 +368,8 @@ extern StaticStorage<CoreTextFontDescriptor> sFontDescriptorCache;
   }
 
 //  DBGMSG("%lu\n", points[0].ms.idx);
+
+  [self trackHolds:eventType :points];
   
   if(eventType == ETouchEvent::Began)
   {
@@ -394,6 +396,68 @@ extern StaticStorage<CoreTextFontDescriptor> sFontDescriptorCache;
   
   if(eventType == ETouchEvent::Cancelled)
     mGraphics->OnTouchCancelled(points);
+}
+
+// riite: A FINGER HELD STILL IS A LONG PRESS, as UILongPressGestureRecognizer counts one: half
+// a second within ten points of where it landed. Not the recognizer itself, which takes the
+// touch from the view when it fires and so cancels the press for every control, wanted or
+// not; here IGraphics asks the control under the finger, and one that does not use the right
+// button never notices the time passing. Checked on every display tick (redraw:).
+static constexpr double kHoldSeconds = .5;
+static constexpr float kHoldSlop = 10.f; // points on the screen
+
+- (void) trackHolds:(ETouchEvent) eventType :(const std::vector<IMouseInfo>&) points
+{
+  for (const auto& point : points)
+  {
+    int i = 0;
+    while (i < mHoldCount && mHolds[i].id != point.ms.touchID) ++i;
+
+    if (eventType == ETouchEvent::Began)
+    {
+      if (i == mHoldCount && mHoldCount < 16) ++mHoldCount;
+      if (i < mHoldCount)
+      {
+        mHolds[i].id = point.ms.touchID;
+        mHolds[i].x0 = mHolds[i].x = point.x;
+        mHolds[i].y0 = mHolds[i].y = point.y;
+        mHolds[i].t0 = point.ms.timestamp;
+        mHolds[i].still = YES;
+      }
+    }
+    else if (i < mHoldCount)
+    {
+      if (eventType == ETouchEvent::Moved)
+      {
+        mHolds[i].x = point.x;
+        mHolds[i].y = point.y;
+        const float slop = kHoldSlop / mGraphics->GetDrawScale();
+        if (std::hypot(point.x - mHolds[i].x0, point.y - mHolds[i].y0) > slop)
+          mHolds[i].still = NO;
+      }
+      else
+        mHolds[i] = mHolds[--mHoldCount];
+    }
+  }
+}
+
+- (void) fireHolds
+{
+  const double now = [NSProcessInfo processInfo].systemUptime; // UITouch.timestamp's clock
+  for (int i = 0; i < mHoldCount && mGraphics; ++i)
+  {
+    if (!mHolds[i].still || now - mHolds[i].t0 < kHoldSeconds)
+      continue;
+
+    mHolds[i].still = NO; // once per finger, taken or not
+    IMouseInfo point;
+    point.x = mHolds[i].x;
+    point.y = mHolds[i].y;
+    point.ms.L = true;
+    point.ms.touchID = mHolds[i].id;
+    point.ms.timestamp = now;
+    mGraphics->OnTouchLongPress(point);
+  }
 }
 
 - (void) touchesBegan:(NSSet*) touches withEvent:(UIEvent*) event
@@ -478,6 +542,8 @@ extern StaticStorage<CoreTextFontDescriptor> sFontDescriptorCache;
 
     if (displayLink.preferredFramesPerSecond != target)
       displayLink.preferredFramesPerSecond = target;
+
+    [self fireHolds];
   }
 
 #ifdef IGRAPHICS_CPU

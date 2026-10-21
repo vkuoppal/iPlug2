@@ -82,6 +82,11 @@ UIKeyInput // riite: IGraphics::ShowSoftKeyboard
   double mTapTime[256];
   float mTapX[256], mTapY[256], mTapZ[256];
   int mTapNext, mTapCount;
+
+  // riite: each finger down, for IGraphics::OnTouchLongPress: where it landed, where it is
+  // and when it landed (UITouch.timestamp), and whether it is still a long press to be.
+  struct { ITouchID id; float x0, y0, x, y; double t0; BOOL still; } mHolds[16];
+  int mHoldCount;
   IGraphicsIOS* mGraphics;
   IGRAPHICS_UITABLEVC* mMenuTableController;
   UINavigationController* mMenuNavigationController;
