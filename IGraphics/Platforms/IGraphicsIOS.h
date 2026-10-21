@@ -74,6 +74,11 @@ public:
   
   EUIAppearance GetUIAppearance() const override;
 
+  void ShowSoftKeyboard(bool show) override; // riite
+  void SetTapSensing(bool on) override; // riite
+  float TapJolt(double timestamp, double before, double after) const override; // riite
+  bool IsTapSensing() const override; // riite
+
   void ActivateGLContext() override;
   void DeactivateGLContext() override;
 protected:

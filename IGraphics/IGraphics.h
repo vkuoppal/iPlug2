@@ -1640,6 +1640,36 @@ public:
    * @return Light/Dark mode */
   virtual EUIAppearance GetUIAppearance() const { return EUIAppearance::Light; }
   
+  /** riite: brings the platform's own keyboard up, or takes it down, for a text field the
+   * UI draws itself: a touch screen has no other way to type into one. What it types
+   * arrives through OnKeyDown at the last touch, as a hardware key would (Return as
+   * kVK_RETURN, Backspace as kVK_BACK). iOS has one; the other platforms ignore it.
+   * @param show \c true to bring it up, \c false to take it down */
+  virtual void ShowSoftKeyboard(bool show) {}
+
+  /** riite: the device's motion sensor, read as fast as it goes while on, so that a touch
+   * can be given how hard it struck the device (GarageBand's touch velocity: a screen
+   * senses no finger pressure). iOS has one, for a host that links CoreMotion; the other
+   * platforms ignore it.
+   * @param on \c true to start reading it, \c false to stop */
+  virtual void SetTapSensing(bool on) {}
+
+  /** riite: how hard the device was jolted around a touch: the largest change in
+   * acceleration from one sensor reading to the next, in g, from \p before seconds
+   * before \p timestamp to \p after seconds after it.
+   * @param timestamp The touch's IMouseMod::timestamp
+   * @return The jolt, or a negative number while no reading has yet arrived from as late
+   * as \p after (ask again), or when sensing is off or there is no sensor */
+  virtual float TapJolt(double timestamp, double before, double after) const { return -1.f; }
+
+  /** riite: \c true while SetTapSensing has the sensor running, so TapJolt will answer */
+  virtual bool IsTapSensing() const { return false; }
+
+  /** riite: frames handed to the GPU that it has not finished yet. A platform that knows
+   * (Skia on Metal) lets the view skip a frame rather than wait on the GPU for the next
+   * drawable, since that wait blocks the main thread and every touch behind it. */
+  virtual int FramesInFlight() const { return 0; }
+
   /** @param enable Set \c true if you want to handle mouse over messages. Note: this may increase the amount CPU usage if you redraw on mouse overs etc */
   void EnableMouseOver(bool enable) { mEnableMouseOver = enable; }
 

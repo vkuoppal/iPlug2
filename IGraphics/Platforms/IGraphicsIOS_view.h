@@ -9,6 +9,7 @@
 */
 
 #import <UIKit/UIKit.h>
+#include <os/lock.h>
 #include "IGraphicsIOS.h"
 
 #ifdef IGRAPHICS_GL
@@ -66,10 +67,21 @@ UIPopoverPresentationControllerDelegate,
 UIGestureRecognizerDelegate,
 UITraitEnvironment,
 UIDocumentPickerDelegate,
-UIColorPickerViewControllerDelegate
+UIColorPickerViewControllerDelegate,
+UIKeyInput // riite: IGraphics::ShowSoftKeyboard
 >
 {
 @public
+  BOOL mSoftKeyboard; // riite: a drawn text field wants the keyboard
+
+  // riite: the motion sensor's last readings, for IGraphics::TapJolt. Written on the
+  // sensor's queue, read on the main thread, under mTapLock.
+  id mMotion; // a CMMotionManager, looked up at run time so that only a host linking CoreMotion needs it
+  NSOperationQueue* mMotionQueue;
+  os_unfair_lock mTapLock;
+  double mTapTime[256];
+  float mTapX[256], mTapY[256], mTapZ[256];
+  int mTapNext, mTapCount;
   IGraphicsIOS* mGraphics;
   IGRAPHICS_UITABLEVC* mMenuTableController;
   UINavigationController* mMenuNavigationController;
@@ -94,6 +106,9 @@ UIColorPickerViewControllerDelegate
 - (IPopupMenu*) createPopupMenu: (IPopupMenu&) menu : (CGRect) bounds;
 - (void) createTextEntry: (int) paramIdx : (const IText&) text : (const char*) str : (int) length : (CGRect) areaRect;
 - (void) endUserInput;
+- (void) showSoftKeyboard: (BOOL) show; // riite
+- (void) setTapSensing: (BOOL) on; // riite
+- (float) tapJolt: (double) timestamp : (double) before : (double) after; // riite
 - (void) showMessageBox: (const char*) str : (const char*) title : (EMsgBoxType) type : (IMsgBoxCompletionHandlerFunc) completionHandler;
 - (void) promptForFile: (NSString*) fileName : (NSString*) path : (EFileAction) action : (NSArray*) contentTypes : (IFileDialogCompletionHandlerFunc) completionHandler;
 - (void) promptForDirectory: (NSString*) path : (IFileDialogCompletionHandlerFunc) completionHandler;

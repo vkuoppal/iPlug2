@@ -1706,7 +1706,8 @@ struct IMouseMod
 
   ITouchID touchID = 0;
   float touchRadius = 0.f;
-  
+  double timestamp = 0.; // riite: when a touch happened, on the platform's clock (iOS: UITouch.timestamp); 0 where unknown
+
   /** Create an IMouseMod
    * @param l left mouse button pressed
    * @param r right mouse button pressed

@@ -60,6 +60,9 @@ public:
 
   void BeginFrame() override;
   void EndFrame() override;
+#ifdef IGRAPHICS_METAL
+  int FramesInFlight() const override { return mFramesInFlight->load(); } // riite
+#endif
   void OnViewInitialized(void* pContext) override;
   void OnViewDestroyed() override;
   void DrawResize() override;
@@ -194,6 +197,9 @@ private:
   void* mMTLCommandQueue;
   void* mMTLDrawable;
   void* mMTLLayer;
+  // riite: committed and not yet completed; shared with the completion handlers, which
+  // can outlive this object
+  std::shared_ptr<std::atomic<int>> mFramesInFlight = std::make_shared<std::atomic<int>>(0);
 #endif
 
   static StaticStorage<Font> sFontCache;

@@ -291,6 +291,28 @@ void IGraphicsIOS::CreatePlatformTextEntry(int paramIdx, const IText& text, cons
   [(IGRAPHICS_VIEW*) mView createTextEntry: paramIdx : text: str: length: areaRect];
 }
 
+void IGraphicsIOS::ShowSoftKeyboard(bool show)
+{
+  if (mView)
+    [(IGRAPHICS_VIEW*) mView showSoftKeyboard: show];
+}
+
+void IGraphicsIOS::SetTapSensing(bool on)
+{
+  if (mView)
+    [(IGRAPHICS_VIEW*) mView setTapSensing: on];
+}
+
+float IGraphicsIOS::TapJolt(double timestamp, double before, double after) const
+{
+  return mView ? [(IGRAPHICS_VIEW*) mView tapJolt: timestamp : before : after] : -1.f;
+}
+
+bool IGraphicsIOS::IsTapSensing() const
+{
+  return mView && ((IGRAPHICS_VIEW*) mView)->mMotion != nil;
+}
+
 bool IGraphicsIOS::OpenURL(const char* url, const char* msgWindowTitle, const char* confirmMsg, const char* errMsgOnFailure)
 {
   NSURL* pNSURL = nullptr;

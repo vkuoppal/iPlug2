@@ -86,6 +86,13 @@ public:
     }
   }
 
+  /** riite: set one channel's pitch bend range, or, for a channel inside an MPE zone,
+   * every member channel's (what RPN 0 does). Public so that a host can give the
+   * channels of its own on-screen keyboard a wide range without sending RPN CCs, which
+   * MIDI learn would see. Outside MPE mode it touches that channel only; a later
+   * SetPitchBendRange sets every channel again. */
+  void SetChannelPitchBendRange(int channel, int range);
+
   void SetPolyMode(VoiceAllocator::EPolyMode mode)
   {
     mVoiceAllocator.mPolyMode = mode;
@@ -189,7 +196,6 @@ private:
   int UpperZoneEnd() const { return 15; }
 
   void SetMPEZones(int channel, int nChans);
-  void SetChannelPitchBendRange(int channel, int range);
 
   VoiceInputEvent MidiMessageToEventBasic(const IMidiMsg& msg);
   VoiceInputEvent MidiMessageToEventMPE(const IMidiMsg& msg);

@@ -624,6 +624,10 @@ void IGraphicsSkia::EndFrame()
     commandBuffer.label = @"Present";
   
     [commandBuffer presentDrawable:(id<CAMetalDrawable>) mMTLDrawable];
+    // riite: the queue runs in order, so this last buffer completing is the frame done
+    mFramesInFlight->fetch_add(1);
+    std::shared_ptr<std::atomic<int>> inFlight = mFramesInFlight;
+    [commandBuffer addCompletedHandler:^(id<MTLCommandBuffer>) { inFlight->fetch_sub(1); }];
     [commandBuffer commit];
   #endif
 #endif

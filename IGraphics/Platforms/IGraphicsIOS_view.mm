@@ -15,6 +15,7 @@
 #import <QuartzCore/QuartzCore.h>
 #import <Metal/Metal.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
+#import <CoreMotion/CoreMotion.h> // riite: touch velocity; classes looked up at run time
 
 #import "IGraphicsIOS_view.h"
 
@@ -348,6 +349,7 @@ extern StaticStorage<CoreTextFontDescriptor> sFontDescriptorCache;
     point.ms.L = true;
     point.ms.touchID = reinterpret_cast<ITouchID>(pTouch);
     point.ms.touchRadius = [pTouch majorRadius];
+    point.ms.timestamp = [pTouch timestamp]; // riite
   
     point.x = pos.x / ds;
     point.y = pos.y / ds;
@@ -425,6 +427,16 @@ extern StaticStorage<CoreTextFontDescriptor> sFontDescriptorCache;
   
   if(mGraphics)
   {
+    // riite: AT MOST TWO FRAMES ON THE GPU. With three drawables the CPU could run three
+    // frames ahead of a busy GPU, and then nextDrawable blocked the main thread for the
+    // GPU's whole frame, every frame, with every touch waiting behind it. Measured on
+    // the iPad Air M4 under a fast melody: the main thread 14.5 ms late typically and
+    // 18 to 33 ms at worst; with two in flight, 0 typically and 6 ms at worst, still at
+    // 60 fps. One in flight serialises the CPU and the GPU and halves the frame rate.
+    // A frame skipped is drawn on the next tick; nothing is lost but its timing.
+    if (mGraphics->FramesInFlight() >= 2)
+      return;
+
     mGraphics->SetPlatformContext(UIGraphicsGetCurrentContext());
     IGraphics::ScopedGLContext scopedGLContext{mGraphics};
 
@@ -469,13 +481,143 @@ extern StaticStorage<CoreTextFontDescriptor> sFontDescriptorCache;
   return YES;
 }
 
+// riite: the view takes keys (UIKeyInput), and a first responder that takes keys brings
+// the keyboard up, so it is first responder only while a drawn text field wants the
+// keyboard (ShowSoftKeyboard). Nothing else here reads keys from a first responder.
 - (BOOL) canBecomeFirstResponder
 {
-  return YES;
+  return mSoftKeyboard;
 }
+
+- (void) showSoftKeyboard: (BOOL) show
+{
+  mSoftKeyboard = show;
+  if (show && !self.isFirstResponder)
+    [self becomeFirstResponder];
+  else if (!show && self.isFirstResponder)
+    [self resignFirstResponder];
+}
+
+- (BOOL) hasText
+{
+  return YES; // the field is drawn, so this cannot know; Backspace in an empty one is harmless
+}
+
+- (void) insertText: (NSString*) text
+{
+  if (mGraphics == nullptr)
+    return;
+
+  [text enumerateSubstringsInRange: NSMakeRange(0, text.length)
+                           options: NSStringEnumerationByComposedCharacterSequences
+                        usingBlock: ^(NSString* character, NSRange range, NSRange enclosing, BOOL* stop) {
+    if ([character isEqualToString: @"\n"])
+    {
+      mGraphics->OnKeyDown(mPrevX, mPrevY, IKeyPress("", kVK_RETURN));
+      return;
+    }
+    const char* utf8 = character.UTF8String;
+    if (utf8 == nullptr || strlen(utf8) >= sizeof(IKeyPress::utf8))
+      return;
+    const char c = utf8[0];
+    int vk = kVK_NONE;
+    if (c >= 'a' && c <= 'z')
+      vk = 'A' + (c - 'a');
+    else if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'))
+      vk = c;
+    else if (c == ' ')
+      vk = kVK_SPACE;
+    mGraphics->OnKeyDown(mPrevX, mPrevY, IKeyPress(utf8, vk));
+  }];
+}
+
+- (void) deleteBackward
+{
+  if (mGraphics)
+    mGraphics->OnKeyDown(mPrevX, mPrevY, IKeyPress("", kVK_BACK));
+}
+
+// riite: the accelerometer, as fast as it goes, kept for TapJolt. CMMotionManager is
+// looked up rather than named, so a host that does not link CoreMotion builds and runs
+// without it (and without touch velocity).
+- (void) setTapSensing: (BOOL) on
+{
+  if (on && mMotion == nil)
+  {
+    Class motionClass = NSClassFromString(@"CMMotionManager");
+    CMMotionManager* motion = motionClass ? [[motionClass alloc] init] : nil;
+    if (motion == nil || !motion.accelerometerAvailable)
+      return;
+    os_unfair_lock_lock(&mTapLock);
+    mTapNext = mTapCount = 0;
+    os_unfair_lock_unlock(&mTapLock);
+    motion.accelerometerUpdateInterval = 0.001; // the sensor gives what it can
+    mMotionQueue = [[NSOperationQueue alloc] init];
+    mMotionQueue.maxConcurrentOperationCount = 1;
+    mMotionQueue.qualityOfService = NSQualityOfServiceUserInteractive;
+    __weak IGRAPHICS_VIEW* weakSelf = self;
+    [motion startAccelerometerUpdatesToQueue: mMotionQueue withHandler: ^(CMAccelerometerData* data, NSError* error) {
+      IGRAPHICS_VIEW* strongSelf = weakSelf;
+      if (strongSelf == nil || data == nil)
+        return;
+      os_unfair_lock_lock(&strongSelf->mTapLock);
+      const int i = strongSelf->mTapNext;
+      strongSelf->mTapTime[i] = data.timestamp;
+      strongSelf->mTapX[i] = data.acceleration.x;
+      strongSelf->mTapY[i] = data.acceleration.y;
+      strongSelf->mTapZ[i] = data.acceleration.z;
+      strongSelf->mTapNext = (i + 1) % 256;
+      strongSelf->mTapCount = std::min(strongSelf->mTapCount + 1, 256);
+      os_unfair_lock_unlock(&strongSelf->mTapLock);
+    }];
+    mMotion = motion;
+  }
+  else if (!on && mMotion != nil)
+  {
+    [(CMMotionManager*) mMotion stopAccelerometerUpdates];
+    mMotion = nil;
+    mMotionQueue = nil;
+  }
+}
+
+// The readings' times and a touch's are both seconds of the same uptime clock.
+- (float) tapJolt: (double) timestamp : (double) before : (double) after
+{
+  if (mMotion == nil)
+    return -1.f;
+  os_unfair_lock_lock(&mTapLock);
+  float jolt = -1.f;
+  if (mTapCount > 1 && mTapTime[(mTapNext + 255) % 256] >= timestamp + after)
+  {
+    jolt = 0.f;
+    for (int i = mTapCount - 1; i > 0; --i) // oldest first, each against the one before it
+    {
+      const int k = (mTapNext - i + 256) % 256, j = (k + 255) % 256;
+      const double t = mTapTime[k];
+      if (t < timestamp - before || t > timestamp + after)
+        continue;
+      const float dx = mTapX[k] - mTapX[j], dy = mTapY[k] - mTapY[j], dz = mTapZ[k] - mTapZ[j];
+      jolt = std::max(jolt, std::sqrt(dx * dx + dy * dy + dz * dz));
+    }
+  }
+  os_unfair_lock_unlock(&mTapLock);
+  return jolt;
+}
+
+// The keyboard for a name or a search: no capitals, corrections or smart punctuation
+// that a field taking one key at a time could not undo.
+- (UITextAutocapitalizationType) autocapitalizationType { return UITextAutocapitalizationTypeNone; }
+- (UITextAutocorrectionType) autocorrectionType { return UITextAutocorrectionTypeNo; }
+- (UITextSpellCheckingType) spellCheckingType { return UITextSpellCheckingTypeNo; }
+- (UITextSmartQuotesType) smartQuotesType { return UITextSmartQuotesTypeNo; }
+- (UITextSmartDashesType) smartDashesType { return UITextSmartDashesTypeNo; }
+- (UITextSmartInsertDeleteType) smartInsertDeleteType { return UITextSmartInsertDeleteTypeNo; }
+- (UIReturnKeyType) returnKeyType { return UIReturnKeyDone; }
+- (UIKeyboardAppearance) keyboardAppearance { return UIKeyboardAppearanceDark; } // riite's UIs are dark
 
 - (void) removeFromSuperview
 {
+  [self setTapSensing: NO];
   [self.displayLink invalidate];
   self.displayLink = nil;
   mTextField = nil;
