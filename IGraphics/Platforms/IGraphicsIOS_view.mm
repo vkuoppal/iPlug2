@@ -439,6 +439,19 @@ extern StaticStorage<CoreTextFontDescriptor> sFontDescriptorCache;
 
 - (void) redraw:(CADisplayLink*) displayLink
 {
+  // riite: honour IGraphics::FrameRateCap as IGraphicsWin's VBlankPacer does, read on every
+  // tick so that a cap set or lifted takes effect on the next one. preferredFramesPerSecond
+  // is what CADisplayLink paces by; without this the link ran at FPS() whatever the cap said.
+  if (mGraphics)
+  {
+    const int fps = mGraphics->FPS() > 0 ? mGraphics->FPS() : 60;
+    const int cap = mGraphics->FrameRateCap();
+    const NSInteger target = (cap > 0 && cap < fps) ? cap : fps;
+
+    if (displayLink.preferredFramesPerSecond != target)
+      displayLink.preferredFramesPerSecond = target;
+  }
+
 #ifdef IGRAPHICS_CPU
   [self setNeedsDisplay];
 #else

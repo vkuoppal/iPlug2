@@ -1132,7 +1132,8 @@ public:
   int FPS() const { return mFPS; }
 
   /** riite: draw at no more than this many frames a second for now, or at FPS() again
-   * with 0. Safe from any thread. Windows applies it on the next vblank; the other
+   * with 0. Safe from any thread. Windows applies it on the next vblank, iOS and the Mac
+   * on the next timer tick (the Mac's CVDisplayLink build ignores it); the other
    * platforms ignore it for now.
    * @param fps The cap, or 0 for none. A cap at or above FPS() changes nothing */
   void SetFrameRateCap(int fps) { mFrameRateCap.store(fps > 0 ? fps : 0, std::memory_order_relaxed); }

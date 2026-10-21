@@ -530,9 +530,26 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
   return kCVReturnSuccess;
 }
 
+// riite: the rate the timer runs at, FPS() or IGraphics::FrameRateCap() when that is lower,
+// as IGraphicsWin's VBlankPacer and the iOS view aim at.
+static int TimerFPS(const IGraphics* pGraphics)
+{
+  const int fps = pGraphics->FPS() > 0 ? pGraphics->FPS() : 60;
+  const int cap = pGraphics->FrameRateCap();
+  return (cap > 0 && cap < fps) ? cap : fps;
+}
+
 - (void) onTimer: (NSTimer*) pTimer
 {
   [self render];
+
+  // riite: the cap is read on every tick, so that a cap set or lifted takes effect on the
+  // next one. Without this the timer ran at FPS() whatever the cap said.
+  if (mGraphics && mTimer == pTimer && pTimer.timeInterval != 1.0 / (double) TimerFPS(mGraphics))
+  {
+    [self killTimer];
+    [self setTimer];
+  }
 }
 
 - (void) setTimer
@@ -568,7 +585,7 @@ static CVReturn displayLinkCallback(CVDisplayLinkRef displayLink, const CVTimeSt
   
   CVDisplayLinkStart(mDisplayLink);
 #else
-  double sec = 1.0 / (double) mGraphics->FPS();
+  double sec = 1.0 / (double) TimerFPS(mGraphics); // riite: was FPS()
   mTimer = [NSTimer timerWithTimeInterval:sec target:self selector:@selector(onTimer:) userInfo:nil repeats:YES];
   [[NSRunLoop currentRunLoop] addTimer: mTimer forMode: (NSString*) kCFRunLoopCommonModes];
 #endif
