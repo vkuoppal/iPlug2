@@ -360,6 +360,13 @@ bool GetResourcePathFromBundle(const char* fileName, const char* searchExt, WDL_
     else
       pBundle = [NSBundle mainBundle];
 
+    // riite: BUNDLE_ID is built from config.h, so an extension whose bundle id is set
+    // elsewhere (a product's own id, a development suffix) is found by none, and every
+    // bitmap and font went missing. Out of process the main bundle IS the extension,
+    // and two folders up is the app either way, as BundleResourcePath has it.
+    if(isAppExtension && !pBundle)
+      pBundle = [NSBundle mainBundle];
+
     NSString* pFile = [[NSString stringWithUTF8String:fileName] stringByDeletingPathExtension];
     NSString* pExt = [NSString stringWithUTF8String:searchExt];
     

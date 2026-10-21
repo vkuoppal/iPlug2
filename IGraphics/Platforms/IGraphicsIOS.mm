@@ -155,7 +155,17 @@ void IGraphicsIOS::PlatformResize(bool parentHasResized)
 {
   if (mView)
   {
-    CGRect r = CGRectMake(0., 0., static_cast<CGFloat>(WindowWidth()), static_cast<CGFloat>(WindowHeight()));
+    // riite: centred in its parent. A host can give an editor a panel of another shape
+    // than its own (GarageBand's is wide and short), and at the origin a fitted editor
+    // hugged the panel's left edge with the rest of it empty.
+    const CGFloat w = static_cast<CGFloat>(WindowWidth()), h = static_cast<CGFloat>(WindowHeight());
+    CGFloat x = 0., y = 0.;
+    if (UIView* pParent = [(IGRAPHICS_VIEW*) mView superview])
+    {
+      x = std::max<CGFloat>(0., std::floor((pParent.bounds.size.width - w) * 0.5));
+      y = std::max<CGFloat>(0., std::floor((pParent.bounds.size.height - h) * 0.5));
+    }
+    CGRect r = CGRectMake(x, y, w, h);
     [(IGRAPHICS_VIEW*) mView setFrame: r ];
   }
 }
