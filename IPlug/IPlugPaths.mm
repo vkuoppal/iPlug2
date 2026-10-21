@@ -321,8 +321,17 @@ void INIPath(WDL_String& path, const char* pluginName)
   path.Set("");
 }
 
+// <container>/Library/Application Support: the app's own, or an app extension's own,
+// which are different folders unless an App Group joins them. iOS has no system domain an
+// app may write, so isSystem is ignored. This was empty, which left every path built on it
+// relative to "/" and every write under it failing. Created here because a fresh container
+// does not have it, and on the desktop callers may rely on it existing.
 void AppSupportPath(WDL_String& path, bool isSystem)
 {
+  NSArray* pPaths = NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES);
+  NSString* pApplicationSupportDirectory = [pPaths objectAtIndex:0];
+  [[NSFileManager defaultManager] createDirectoryAtPath:pApplicationSupportDirectory withIntermediateDirectories:YES attributes:nil error:nil];
+  path.Set([pApplicationSupportDirectory UTF8String]);
 }
 
 void AppGroupContainerPath(WDL_String& path, const char* appGroupID)
