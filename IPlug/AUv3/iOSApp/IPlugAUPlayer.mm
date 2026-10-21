@@ -116,29 +116,46 @@ bool isInstrument()
   AVAudioSession* session = [AVAudioSession sharedInstance];
   NSError* error = nil;
 
-  AVAudioSessionCategoryOptions options = AVAudioSessionCategoryOptionDefaultToSpeaker | AVAudioSessionCategoryOptionAllowBluetooth;
-  [session setCategory: isInstrument() ? AVAudioSessionCategoryPlayback
-                                       : AVAudioSessionCategoryPlayAndRecord
-                  withOptions:options error: &error];
-  
-  if (error)
+  // DefaultToSpeaker and AllowBluetooth (HFP) are PlayAndRecord options only. Passed with
+  // Playback they fail the whole call (-50), and an instrument is left in the default
+  // SoloAmbient category: muted by the Silent switch, stopped by other apps' audio and by
+  // going to the background. Playback needs no options; Bluetooth A2DP output just works.
+  AVAudioSessionCategoryOptions options = isInstrument() ? 0
+    : AVAudioSessionCategoryOptionDefaultToSpeaker | AVAudioSessionCategoryOptionAllowBluetooth;
+
+  if (![session setCategory: isInstrument() ? AVAudioSessionCategoryPlayback
+                                            : AVAudioSessionCategoryPlayAndRecord
+                withOptions:options error: &error])
   {
     NSLog(@"Error setting category: %@", error);
   }
-  
-  [session setPreferredSampleRate:iplug::DEFAULT_SAMPLE_RATE error: &error];
-  
-  if (error)
+
+  // Checked by return value: a successful call does not clear an earlier error, so the
+  // old `if (error)` checks reported the category's failure three times.
+  if (![session setPreferredSampleRate:iplug::DEFAULT_SAMPLE_RATE error: &error])
   {
     NSLog(@"Error setting samplerate: %@", error);
   }
-  
-  [session setPreferredIOBufferDuration:128.0/iplug::DEFAULT_SAMPLE_RATE error: &error];
-  
-  if (error)
+
+  if (![session setPreferredIOBufferDuration:128.0/iplug::DEFAULT_SAMPLE_RATE error: &error])
   {
     NSLog(@"Error setting io buffer duration: %@", error);
   }
+}
+
+// After an interruption (a call, Siri, an alarm) or a reset of the media services the
+// session is inactive and the engine stopped; nothing restarted them, so audio stayed
+// silent until the app was relaunched.
+- (void) reactivateSession
+{
+  NSError* error = nil;
+
+  if (![[AVAudioSession sharedInstance] setActive:TRUE error: &error])
+  {
+    NSLog(@"Error re-activating session: %@", error);
+  }
+
+  [self restartAudioEngine];
 }
 
 - (void) makeEngineConnections
@@ -224,12 +241,30 @@ bool isInstrument()
   NSNotificationCenter* notifCtr = [NSNotificationCenter defaultCenter];
 
   [notifCtr addObserver: self selector: @selector (onEngineConfigurationChange:) name:AVAudioEngineConfigurationChangeNotification object: engine];
+  [notifCtr addObserver: self selector: @selector (onSessionInterruption:) name:AVAudioSessionInterruptionNotification object: [AVAudioSession sharedInstance]];
+  [notifCtr addObserver: self selector: @selector (onMediaServicesReset:) name:AVAudioSessionMediaServicesWereResetNotification object: [AVAudioSession sharedInstance]];
 }
 
 #pragma mark Notifications
 - (void) onEngineConfigurationChange: (NSNotification*) notification
 {
   [self restartAudioEngine];
+}
+
+- (void) onSessionInterruption: (NSNotification*) notification
+{
+  NSNumber* type = notification.userInfo[AVAudioSessionInterruptionTypeKey];
+
+  // An instrument resumes whatever the system suggests: a running engine that nobody
+  // plays is silent, and one that stays stopped is a synth that seems broken.
+  if (type && [type unsignedIntegerValue] == AVAudioSessionInterruptionTypeEnded)
+    [self reactivateSession];
+}
+
+- (void) onMediaServicesReset: (NSNotification*) notification
+{
+  [self setupSession];
+  [self reactivateSession];
 }
 
 @end
