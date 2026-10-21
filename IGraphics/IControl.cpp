@@ -794,6 +794,16 @@ void ISwitchControlBase::OnMouseUp(float x, float y, const IMouseMod& mod)
   SetDirty(false);
 }
 
+double IControl::TouchFineGearing(float x, float y, EDirection dir) const
+{
+  const IRECT& r = mRECT;
+  const float across = dir == EDirection::Vertical ? std::fabs(x - r.MW()) - r.W() * 0.5f
+                                                   : std::fabs(y - r.MH()) - r.H() * 0.5f;
+  const float scale = GetUI() ? GetUI()->GetDrawScale() : 1.f;
+  const double t = Clip(static_cast<double>(across * scale) / 200.0, 0.0, 1.0);
+  return std::pow(10.0, t);
+}
+
 bool IKnobControlBase::IsFineControl(const IMouseMod& mod, bool wheel) const
 {
 #ifdef PROTOOLS
@@ -830,6 +840,9 @@ void IKnobControlBase::OnMouseUp(float x, float y, const IMouseMod& mod)
 void IKnobControlBase::OnMouseDrag(float x, float y, float dX, float dY, const IMouseMod& mod)
 {
   double gearing = IsFineControl(mod, false) ? mGearing * 10.0 : mGearing;
+
+  if (mod.IsTouch()) // riite
+    gearing *= TouchFineGearing(x, y, mDirection);
   
   IRECT dragBounds = GetKnobDragBounds();
 
@@ -906,6 +919,7 @@ void ISliderControlBase::OnResize()
 void ISliderControlBase::OnMouseDown(float x, float y, const IMouseMod& mod)
 {
   mMouseDown = true;
+  mTouchScrub = false;
   
   if(GetParam())
   {
@@ -929,6 +943,7 @@ void ISliderControlBase::OnMouseUp(float x, float y, const IMouseMod& mod)
     GetUI()->HideMouseCursor(false);
   
   mMouseDown = false;
+  mTouchScrub = false;
   SetDirty(false);
 }
 
@@ -936,7 +951,17 @@ void ISliderControlBase::OnMouseDrag(float x, float y, float dX, float dY, const
 {
   const IParam* pParam = GetParam();
 
-  if(mod.touchID || !mHideCursorOnDrag)
+  // riite: a finger that leaves the track scrubs finer from where the value is, until it
+  // lifts, rather than snapping to where it is (TouchFineGearing).
+  const double touchFine = mod.IsTouch() ? TouchFineGearing(x, y, mDirection) : 1.0;
+
+  if (touchFine > 1.0 && !mTouchScrub)
+  {
+    mTouchScrub = true;
+    mMouseDragValue = GetValue();
+  }
+
+  if((mod.touchID || !mHideCursorOnDrag) && !mTouchScrub)
   {
     if(pParam)
     {
@@ -954,7 +979,7 @@ void ISliderControlBase::OnMouseDrag(float x, float y, float dX, float dY, const
     }
   }
   
-  double gearing = IsFineControl(mod, false) ? mGearing * 10.0 : mGearing;
+  double gearing = (IsFineControl(mod, false) ? mGearing * 10.0 : mGearing) * touchFine;
 
   if (mDirection == EDirection::Vertical)
     mMouseDragValue += static_cast<double>(dY / static_cast<double>(mTrackBounds.T - mTrackBounds.B) / gearing);

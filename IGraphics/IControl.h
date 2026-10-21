@@ -115,6 +115,16 @@ public:
    * @return \c true if a long press here should be the right button's press */
   virtual bool WantsLongPress(float x, float y) const { return WantsRightClick(); }
 
+  /** riite: a finger's fine adjust, as iOS scrubs a video: how many times finer a drag is
+   * for the finger being this far to the side of the control, across the direction it
+   * drags. 1 over the control itself, rising evenly in ratio to 10 (the fine modifier's
+   * gearing) at 200 points beyond it. A touch has no Shift to hold.
+   * @param x The finger's X
+   * @param y The finger's Y
+   * @param dir The direction the drag moves the value in
+   * @return The gearing's multiplier, 1 to 10 */
+  double TouchFineGearing(float x, float y, EDirection dir) const;
+
 /** Implement this method to respond to a mouse up event on this control. 
    * @param x The X coordinate of the mouse event
    * @param y The Y coordinate of the mouse event
@@ -1451,6 +1461,7 @@ protected:
   double mGearing;
   bool mMouseDown = false;
   double mMouseDragValue;
+  bool mTouchScrub = false; // riite: a finger has left the track, so it scrubs from the value
 };
 
 /** A base class for mult-strip/track controls, such as multi-sliders, meters
