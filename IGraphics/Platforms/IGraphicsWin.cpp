@@ -2112,6 +2112,7 @@ void IGraphicsWin::StopVBlankThread()
   {
     mVBlankShutdown = true;
     ::WaitForSingleObject(mVBlankThread, 10000);
+    ::CloseHandle(mVBlankThread);   // one leaked thread handle per editor close otherwise
     mVBlankThread = INVALID_HANDLE_VALUE;
     mVBlankWindow = 0;
   }

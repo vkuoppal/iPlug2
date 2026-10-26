@@ -55,7 +55,18 @@ struct HFontHolder
     GetObjectW(hfont, sizeof(LOGFONTW), &lFont);
     mHFont = CreateFontIndirectW(&lFont);
   }
-  
+
+  // The holder owns its copy: the cache is cleared whenever the last IGraphicsWin closes, so
+  // without this every editor open/close leaked one GDI font object per loaded font.
+  ~HFontHolder()
+  {
+    if (mHFont)
+      DeleteObject(mHFont);
+  }
+
+  HFontHolder(const HFontHolder&) = delete;
+  HFontHolder& operator=(const HFontHolder&) = delete;
+
   HFONT mHFont;
 };
 
