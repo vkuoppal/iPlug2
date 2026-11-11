@@ -20,6 +20,7 @@
 #include "include/effects/SkImageFilters.h"
 #include "include/core/SkPicture.h"            // riite: BeginRecording
 #include "include/core/SkPictureRecorder.h"
+#include <chrono>                          // riite: EndFrame's GPU cleanup clock
 
 #if !defined IGRAPHICS_NO_SKIA_SKPARAGRAPH
 #include "modules/skparagraph/include/FontCollection.h"
@@ -617,6 +618,18 @@ void IGraphicsSkia::EndFrame()
 
   if (auto dContext = GrAsDirectContext(mScreenSurface->getCanvas()->recordingContext())) {
     dContext->flushAndSubmit();
+    // riite: every few seconds, free the SCRATCH GPU resources no frame has used in that
+    // time. A freed budgeted render target (a layer) goes back to Skia's cache rather than
+    // the driver, so an editor that once opened a heavy page kept that memory for good;
+    // a scratch target is recreated if drawn again. Scratch only: purging the uniquely
+    // keyed resources too (glyph and path masks) moved a text edge by a shade once they
+    // were regenerated, and they are not where the memory was.
+    const auto now = std::chrono::steady_clock::now();
+    if (now - mLastGpuCleanup >= std::chrono::seconds(5))
+    {
+      mLastGpuCleanup = now;
+      dContext->performDeferredCleanup(std::chrono::seconds(5), GrPurgeResourceOptions::kScratchResourcesOnly);
+    }
   }
 
   #ifdef IGRAPHICS_METAL

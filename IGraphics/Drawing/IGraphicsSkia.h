@@ -19,6 +19,7 @@
 #include "include/core/SkCanvas.h"
 #include "include/core/SkImage.h"
 #include "include/gpu/GrDirectContext.h"
+#include <chrono>
 #pragma warning( pop )
 
 namespace skia::textlayout {
@@ -186,6 +187,10 @@ private:
 #ifndef IGRAPHICS_CPU
   sk_sp<GrDirectContext> mGrContext;
   sk_sp<SkSurface> mScreenSurface;
+  // riite: when EndFrame last asked the context to hand back GPU resources nothing had
+  // used for a while (performDeferredCleanup). Budgeted render targets otherwise stay in
+  // Skia's resource cache after they are freed, up to its whole budget.
+  std::chrono::steady_clock::time_point mLastGpuCleanup{};
 #endif
   
 #if !defined IGRAPHICS_NO_SKIA_SKPARAGRAPH
