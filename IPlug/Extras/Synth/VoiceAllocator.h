@@ -171,6 +171,11 @@ private:
 
   std::vector<SynthVoice*> mVoicePtrs;
   std::vector<std::unique_ptr<VoiceControlRamps>> mVoiceGlides;
+  // riite: per voice, how many more ramp passes it is owed (2 after any SetTarget, kept at
+  // 2 while a glide runs, then one last pass to settle startValue). Zero means every ramp
+  // is idle and flat, and ProcessEvents skips the voice: walking all of them every chunk
+  // touched 128 voices' memory for nothing.
+  std::vector<uint8_t> mGlidePasses;
   std::vector<int> mHeldKeys; // The currently physically held keys on the keyboard
   std::vector<int> mSustainedNotes; // Any notes that are sustained, including those that are physically held
 

@@ -64,6 +64,7 @@ void VoiceAllocator::AddVoice(SynthVoice* pVoice, uint8_t zone)
 
     // make a glides structures for the control ramps of the new voice
     mVoiceGlides.emplace_back(ControlRampProcessor::Create(pVoice->mInputs));
+    mGlidePasses.push_back(0); // cleared above: every ramp idle and flat
   }
   else
   {
@@ -170,6 +171,7 @@ void VoiceAllocator::SendControlToVoiceInputs(VoiceBitsArray v, int ctlIdx, floa
     if(v[i])
     {
       mVoiceGlides[i]->at(ctlIdx).SetTarget(val, 0, glideSamples, mBlockSize);
+      mGlidePasses[i] = 2;
     }
   }
 }
@@ -292,13 +294,21 @@ void VoiceAllocator::ProcessEvents(int blockSize, int64_t sampleTime)
     }
   }
 
-  // update any glides in progress, writing voice control outputs
-  for(auto& glides : mVoiceGlides)
+  // update any glides in progress, writing voice control outputs.
+  // riite: only for the voices still owed a pass (mGlidePasses): an idle, settled ramp's
+  // Process only rewrites startValue with the endValue it already holds.
+  for(size_t v=0; v<mVoiceGlides.size(); ++v)
   {
+    if(!mGlidePasses[v])
+      continue;
+    auto& glides = *mVoiceGlides[v];
+    bool pending = false;
     for(int i=0; i<kNumVoiceControlRamps; ++i)
     {
-      glides->at(i).Process(blockSize);
+      glides[i].Process(blockSize);
+      pending = pending || glides[i].Pending();
     }
+    mGlidePasses[v] = pending ? 2 : static_cast<uint8_t>(mGlidePasses[v] - 1);
   }
 }
 
@@ -379,6 +389,7 @@ void VoiceAllocator::StartVoice(int voiceIdx, int channel, int key, float pitch,
 
   // add glide for pitch
   mVoiceGlides[voiceIdx]->at(kVoiceControlPitch).SetTarget(pitch, sampleOffset, mNoteGlideSamples, mBlockSize);
+  mGlidePasses[voiceIdx] = 2;
 
   // set things directly in voice
   SynthVoice* pVoice = mVoicePtrs[voiceIdx];
@@ -407,6 +418,7 @@ void VoiceAllocator::StartVoices(VoiceBitsArray vbits, int channel, int key, flo
 void VoiceAllocator::StopVoice(int voiceIdx, int sampleOffset)
 {
   mVoiceGlides[voiceIdx]->at(kVoiceControlGate).SetTarget(0.0, sampleOffset, 1, mBlockSize);
+  mGlidePasses[voiceIdx] = 2;
   mVoicePtrs[voiceIdx]->mKeyHeld = false;
   mVoicePtrs[voiceIdx]->mKey = -1;
   mVoicePtrs[voiceIdx]->Release();

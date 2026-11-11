@@ -139,6 +139,10 @@ public:
     }
   }
 
+  /** riite: a glide is still under way. While none is, Process only copies endValue into
+   * startValue, so after one such pass a further one changes nothing. */
+  bool Pending() const { return mSamplesRemaining != 0; }
+
   // set the next target for the glide without writing directly to the ramp.
   void SetTarget(double targetValue, int startOffset, int glideSamples, int blockSize)
   {
