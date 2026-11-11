@@ -15,6 +15,9 @@ using namespace iplug;
 MidiSynth::MidiSynth(VoiceAllocator::EPolyMode mode, int blockSize)
 : mBlockSize(blockSize)
 {
+  // riite: room for a dense block up front, so the audio thread does not realloc this
+  // queue mid-performance (a 49-note cluster at 7 unison copies passed the default).
+  mMidiQueue.Resize(2048);
   SetPolyMode(mode);
 
   for(int i=0; i<128; i++)
@@ -307,8 +310,10 @@ void MidiSynth::SetMPEZones(int channel, int nChans)
   else
     SetPitchBendRange(mNonMPEPitchBendRange);
   
-  std::cout << "MPE mode: " << (mMPEMode ? "ON" : "OFF") << "\n";
-  std::cout << "MPE channels: \n    lo: " << mMPELowerZoneChannels << " hi " << mMPEUpperZoneChannels << "\n";
+  // riite: DBGMSG, not std::cout: this runs on the audio thread, for every MPE
+  // configuration message, and console output can lock and allocate there.
+  DBGMSG("MPE mode: %s\n", mMPEMode ? "ON" : "OFF");
+  DBGMSG("MPE channels: lo %i hi %i\n", mMPELowerZoneChannels, mMPEUpperZoneChannels);
 }
 
 void MidiSynth::SetChannelPitchBendRange(int channelParam, int rangeParam)
@@ -377,7 +382,7 @@ void MidiSynth::HandleRPN(IMidiMsg msg)
       {
         value = state.valueMSB&0xFF;
       }
-      std::cout << "RPN received: channel " << channel << ", param " << param << ", value " << value << "\n";
+      DBGMSG("RPN received: channel %i, param %i, value %i\n", channel, param, value); // riite: not std::cout, see SetMPEZones
       switch(param)
       {
         case 0: // RPN 0 : pitch bend range

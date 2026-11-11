@@ -188,8 +188,12 @@ void IPlugVST3ProcessorBase::ProcessMidiOut(IPlugQueue<SysExData>& sysExQueue, S
     }
   }
   
+  // riite: with no output list nothing ever drains this queue, so a plug that sends MIDI
+  // out (a MIDI thru) grew it for the whole session, reallocating on the audio thread,
+  // while the Flush below walked every message in it every block.
+  if (!pOutputEvents) mMidiOutputQueue.Clear();
   mMidiOutputQueue.Flush(numSamples);
-  
+
   // Output SYSEX from the editor, which has bypassed the processors' ProcessSysEx()
   if (sysExQueue.ElementsAvailable())
   {
