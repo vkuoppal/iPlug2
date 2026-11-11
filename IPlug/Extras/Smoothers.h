@@ -11,6 +11,8 @@
 
 #include "denormal.h"
 #include "IPlugConstants.h"
+#include <algorithm> // riite: std::fill (ProcessBlock)
+#include <cstring>   // riite: std::memcmp
 
 BEGIN_IPLUG_NAMESPACE
 
@@ -71,17 +73,32 @@ public:
     const T b = mB;
     const T a = mA;
 
-    for (auto s = 0; s < nFrames; ++s)
+    // riite: CHANNEL BY CHANNEL, AND A SETTLED CHANNEL IS A FILL (colorapp
+    // PERFORMANCE_AUDIT_NOVEMBER_2026 PF6). The channels never touch each other, so
+    // taking them one at a time computes the same numbers the sample-by-sample loop did.
+    // And a step that gives back the very bits it started from is a fixed point: with the
+    // same input every later step gives them back too, so the rest of the block is a copy.
+    // An idle synth's smoothers sit there; this was per-sample work on every block.
+    for (auto c = 0; c < NC; c++)
     {
-      for (auto c = 0; c < NC; c++)
+      const T input = inputs[channelOffset + c];
+      T* pOut = outputs[channelOffset + c];
+      T state = mOutM1[c];
+      for (auto s = 0; s < nFrames; ++s)
       {
-        T output = (inputs[channelOffset + c] * b) + (mOutM1[c] * a);
+        T output = (input * b) + (state * a);
 #ifndef OS_IOS
         denormal_fix(&output);
 #endif
-        mOutM1[c] = output;
-        outputs[channelOffset + c][s] = output;
+        if (std::memcmp(&output, &state, sizeof(T)) == 0)
+        {
+          std::fill(pOut + s, pOut + nFrames, output);
+          break;
+        }
+        state = output;
+        pOut[s] = output;
       }
+      mOutM1[c] = state;
     }
   }
 

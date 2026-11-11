@@ -66,6 +66,11 @@ public:
   {
     mVoicesAreActive = active;
   }
+
+  /** riite: will the next ProcessBlock run any voice? Exactly its own entry test (no
+   *  active voice and nothing queued: it returns without touching a voice), so a caller
+   *  can skip preparing what only voices read (colorapp PERFORMANCE_AUDIT_NOVEMBER_2026 PF6). */
+  bool WillProcessVoices() const { return mVoicesAreActive || !mMidiQueue.Empty(); }
   
   void InitBasicMPE()
   {

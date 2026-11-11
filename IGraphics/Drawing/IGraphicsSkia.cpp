@@ -21,6 +21,9 @@
 #include "include/core/SkPicture.h"            // riite: BeginRecording
 #include "include/core/SkPictureRecorder.h"
 #include <chrono>                          // riite: EndFrame's GPU cleanup clock
+#include <mutex>                           // riite: the process-wide program cache (PF23)
+#include <string>
+#include "include/gpu/ganesh/GrContextOptions.h"
 
 #if !defined IGRAPHICS_NO_SKIA_SKPARAGRAPH
 #include "modules/skparagraph/include/FontCollection.h"
@@ -425,6 +428,47 @@ APIBitmap* IGraphicsSkia::LoadAPIBitmap(const char* name, const void* pData, int
   return new Bitmap(pData, dataSize, scale);
 }
 
+#if defined IGRAPHICS_GL && defined OS_WIN
+// riite: THE COMPILED SHADER PROGRAMS OUTLIVE THE EDITOR (colorapp
+// PERFORMANCE_AUDIT_NOVEMBER_2026 PF23). Every editor open makes a new GrDirectContext, and
+// a context with no persistent cache compiles and links every GL program it draws with
+// again, so every open paid the whole shader bill. Skia hands each linked program to this
+// cache as a driver binary (GrContextOptions' default kBackendBinary) and asks for it
+// before compiling the next time; a binary the driver will not take back is compiled as
+// before. Process memory only, nothing on disk: one driver, one GPU, one process.
+// Windows GL only, the one path measured; the Mac (Metal) and Android contexts are as
+// they were.
+namespace
+{
+class ProcessProgramCache final : public GrContextOptions::PersistentCache
+{
+public:
+  sk_sp<SkData> load(const SkData& key) override
+  {
+    std::lock_guard<std::mutex> lock(mMutex);
+    const auto it = mPrograms.find(std::string((const char*) key.data(), key.size()));
+    return it == mPrograms.end() ? nullptr : it->second;
+  }
+
+  void store(const SkData& key, const SkData& data, const SkString& /*description*/) override
+  {
+    std::lock_guard<std::mutex> lock(mMutex);
+    mPrograms[std::string((const char*) key.data(), key.size())] = SkData::MakeWithCopy(data.data(), data.size());
+  }
+
+private:
+  std::mutex mMutex;
+  std::map<std::string, sk_sp<SkData>> mPrograms;
+};
+
+ProcessProgramCache& SharedProgramCache()
+{
+  static ProcessProgramCache sCache; // never destroyed before the last context: contexts die with editors
+  return sCache;
+}
+} // namespace
+#endif
+
 void IGraphicsSkia::OnViewInitialized(void* pContext)
 {
 #if defined IGRAPHICS_GL
@@ -435,7 +479,13 @@ void IGraphicsSkia::OnViewInitialized(void* pContext)
 #elif defined __ANDROID__
   auto glInterface = GrGLInterfaces::MakeEGL();
 #endif
+#if defined OS_WIN
+  GrContextOptions options;
+  options.fPersistentCache = &SharedProgramCache();
+  mGrContext = GrDirectContexts::MakeGL(glInterface, options);
+#else
   mGrContext = GrDirectContexts::MakeGL(glInterface);
+#endif
 #elif defined IGRAPHICS_METAL
   CAMetalLayer* pMTLLayer = (CAMetalLayer*) pContext;
   id<MTLDevice> device = pMTLLayer.device;
