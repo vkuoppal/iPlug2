@@ -10,6 +10,10 @@
 
 #pragma once
 
+// riite: IGraphics::GetDrawRegion exists (see it), so code built against older pins of this
+// fork can test for it instead of failing to compile.
+#define IGRAPHICS_HAS_DRAW_REGION 1
+
 /**
  * @file
  * @copydoc IGraphics
@@ -1144,6 +1148,13 @@ public:
   /** Gets the graphics context scaling factor.
    * @return The scaling applied to the graphics context */
   float GetDrawScale() const { return mDrawScale; }
+
+  /** riite: the region the control being drawn is clipped to right now, as DrawControl's
+   * PrepareRegion set it (the dirty region, intersected with the control and its parents).
+   * A large control can skip work that cannot reach it; anything it skips must lie wholly
+   * outside. Feature-test with IGRAPHICS_HAS_DRAW_REGION.
+   * @return The current draw region, in the same coordinates as control rects */
+  const IRECT& GetDrawRegion() const { return mClipRECT; }
 
   /** Gets the screen/display scaling factor, e.g. 2 for a macOS retina screen, 1.5 on Windows when screen is scaled to 150%
     * @return The scale factor of the display on which this graphics context is currently located */
