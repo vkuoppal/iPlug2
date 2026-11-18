@@ -180,7 +180,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpszCmdPa
       pAppHost->SetNoIO(true);
 
     pAppHost->Init();
-    pAppHost->TryToChangeAudio();
+    pAppHost->StartAudioAtLaunch(); // riite: falls back to DirectSound if ASIO will not open
 
     HACCEL hAccel = LoadAccelerators(gHINSTANCE, MAKEINTRESOURCE(IDR_ACCELERATOR1));
 

@@ -74,6 +74,14 @@ const int kNumBufferSizeOptions = 11;
 const std::string kBufferSizeOptions[kNumBufferSizeOptions] = {"32", "64", "96", "128", "192", "256", "512", "1024", "2048", "4096", "8192" };
 const int kDeviceDS = 0; const int kDeviceCoreAudio = 0; const int kDeviceAlsa = 0;
 const int kDeviceASIO = 1; const int kDeviceJack = 1;
+// riite: DirectSound below this buffer crackles at any CPU load (RtAudio keeps three
+// buffers, and three of 128 samples are shorter than Windows' 10 ms mixing period), so the
+// preferences list starts here for it; a first run's own ASIO pick starts at kFirstRunAsioBuffer.
+const uint32_t kMinDirectSoundBuffer = 512;
+const uint32_t kFirstRunAsioBuffer = 256;
+// riite: the note under the buffer list while DirectSound is chosen, made at run time so
+// no product's resource file changes.
+const int kIDC_DirectSoundNote = 0x7A51;
 extern UINT gSCROLLMSG;
 
 class IPlugAPP;
@@ -196,6 +204,18 @@ public:
   bool Init();
   bool InitState();
   void UpdateINI();
+
+  /** riite: on a first run (no settings file) on Windows, take the audio interface's own
+   * ASIO driver when exactly one is installed (IPlugAPP_driverpick.h); otherwise keep the
+   * DirectSound default. Reads the registry only, loads no driver. */
+  void ChooseFirstRunDriver();
+
+  /** riite: the launch's audio start. An ASIO driver that will not open (in use by another
+   * program, unplugged, uninstalled) falls back to DirectSound at kMinDirectSoundBuffer or
+   * more instead of staying silent. A first run's own pick is then replaced in the settings
+   * file; a driver the user chose is kept there and tried again at the next launch.
+   * @return true if audio started */
+  bool StartAudioAtLaunch();
   
   /** Returns the name of the audio device with a given RTAudio device ID
    * @param deviceID The ID RTAudio has given the audio device
@@ -255,6 +275,8 @@ private:
   bool mAudioEnding = false;
   bool mAudioDone = false;
   bool mNoIO = false;
+  /** riite: ChooseFirstRunDriver picked ASIO; the user has not chosen it */
+  bool mAsioPickedOnFirstRun = false;
 
   /** The ID of the operating system's default input device if detected */
   std::optional<uint32_t> mDefaultInputDev;

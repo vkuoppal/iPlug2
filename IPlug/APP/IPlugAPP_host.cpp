@@ -9,10 +9,12 @@
 */
 
 #include "IPlugAPP_host.h"
+#include "IPlugAPP_driverpick.h"
 
 #ifdef OS_WIN
 #include <sys/stat.h>
 #include "win32_utf8.h"
+#include "asiolist.h"
 #endif
 
 #include "IPlugLogger.h"
@@ -129,6 +131,8 @@ bool IPlugAPPHost::InitState()
       mState.mMidiInChan = GetPrivateProfileInt("midi", "inchan", 0, mINIPath.Get()); // 0 is any
       mState.mMidiOutChan = GetPrivateProfileInt("midi", "outchan", 0, mINIPath.Get()); // 1 is first chan
     }
+    else
+      ChooseFirstRunDriver(); // riite
 
     // if settings file doesn't exist, populate with default values, otherwise overwrite
     UpdateINI();
@@ -139,6 +143,7 @@ bool IPlugAPPHost::InitState()
     // folder doesn't exist - make folder and make file
     CreateDirectory(mINIPath.Get(), NULL);
     mINIPath.Append("settings.ini");
+    ChooseFirstRunDriver(); // riite
     UpdateINI(); // will write file if doesn't exist
 #elif defined OS_MAC
     mode_t process_mask = umask(0);
@@ -160,6 +165,84 @@ bool IPlugAPPHost::InitState()
   }
 
   return true;
+}
+
+void IPlugAPPHost::ChooseFirstRunDriver()
+{
+#if defined OS_WIN
+  // riite: A FIRST RUN TAKES THE AUDIO INTERFACE'S OWN ASIO DRIVER WHEN THERE IS EXACTLY ONE.
+  // The DirectSound default cannot run the small buffers an instrument is played at
+  // (kMinDirectSoundBuffer). The registry's driver list is read without loading a driver,
+  // and asioGetDriverName with 32 characters gives the names RtAudio's ASIO device list
+  // shows, so TryToChangeAudio finds the pick by name.
+  std::vector<std::string> names;
+  {
+    AsioDriverList list;
+    char name[32];
+    for (LONG i = 0; i < list.asioGetNumDev(); i++)
+      if (list.asioGetDriverName((int) i, name, 32) == 0)
+        names.push_back(name);
+  }
+
+  const std::string pick = PickFirstRunAsioDriver(names);
+
+  if (pick.empty())
+    return;
+
+  mState.mAudioDriverType = kDeviceASIO;
+  mState.mAudioInDev.Set(pick.c_str());
+  mState.mAudioOutDev.Set(pick.c_str());
+  mState.mBufferSize = kFirstRunAsioBuffer;
+  mAsioPickedOnFirstRun = true;
+  DBGMSG("First run: ASIO driver %s\n", pick.c_str());
+#endif
+}
+
+bool IPlugAPPHost::StartAudioAtLaunch()
+{
+#if defined OS_WIN
+  // riite: AN ASIO DRIVER THAT WILL NOT OPEN FALLS BACK TO DIRECTSOUND. Many ASIO drivers
+  // serve one program at a time, so a DAW holding the interface was enough to leave the
+  // standalone silent behind "Please check the audio settings"; and a driver no longer
+  // installed was replaced by whichever ASIO driver the system listed first, often the
+  // onboard Realtek one. Here the sound comes out of the Windows default device instead.
+  if (!mNoIO && !IsScreenshotMode() && mState.mAudioDriverType == kDeviceASIO)
+  {
+    if (mDAC && GetAudioDeviceID(mState.mAudioOutDev.Get()) && TryToChangeAudio())
+      return true;
+
+    const WDL_String asioName(mState.mAudioOutDev);
+    mState.mAudioDriverType = kDeviceDS;
+    mState.mBufferSize = std::max(mState.mBufferSize, kMinDirectSoundBuffer);
+    mState.mAudioInChanL = 1;
+    mState.mAudioInChanR = 2;
+    mState.mAudioOutChanL = 1;
+    mState.mAudioOutChanR = 2;
+    TryToChangeAudioDriverType();
+    ProbeAudioIO();
+    mState.mAudioInDev.Set(mDefaultInputDev ? GetAudioDeviceName(mDefaultInputDev.value()).c_str() : DEFAULT_INPUT_DEV);
+    mState.mAudioOutDev.Set(mDefaultOutputDev ? GetAudioDeviceName(mDefaultOutputDev.value()).c_str() : DEFAULT_OUTPUT_DEV);
+    const bool started = TryToChangeAudio();
+
+    if (mAsioPickedOnFirstRun)
+    {
+      mAsioPickedOnFirstRun = false;
+      UpdateINI(); // nobody chose ASIO: DirectSound is the setting, as it was before
+    }
+    else
+    {
+      WDL_String msg;
+      msg.SetFormatted(1024, "The ASIO driver \"%s\" could not be opened. Another program may be using it, "
+                             "or the device is unplugged.\n\n%s is playing through DirectSound for now, with more "
+                             "delay. It tries ASIO again the next time it starts, or choose it again in File > Preferences.",
+                       asioName.Get(), PLUG_NAME);
+      MessageBox(gHWND, msg.Get(), PLUG_NAME, MB_OK | MB_ICONINFORMATION);
+    }
+
+    return started;
+  }
+#endif
+  return TryToChangeAudio();
 }
 
 void IPlugAPPHost::UpdateINI()
@@ -277,6 +360,10 @@ void IPlugAPPHost::ProbeAudioIO()
 {
   mAudioInputDevIDs.clear();
   mAudioOutputDevIDs.clear();
+  // riite: forgotten with the lists. They outlived a driver change, so a DirectSound
+  // device's ID could be handed to ASIO as its "default device".
+  mDefaultInputDev.reset();
+  mDefaultOutputDev.reset();
 
   if (!mDAC)
     return;

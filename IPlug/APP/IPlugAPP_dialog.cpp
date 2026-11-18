@@ -195,10 +195,31 @@ void IPlugAPPHost::PopulateAudioDialogs(HWND hwndDlg)
 //  }
 
 //  Populate buffer size combobox
+  // riite: emptied first (each driver change used to append the eleven sizes again), and
+  // DirectSound lists only kMinDirectSoundBuffer and up, with a note pointing at ASIO:
+  // below that it crackles whatever the CPU does.
+#ifdef OS_WIN
+  const bool directSound = mState.mAudioDriverType == kDeviceDS;
+#else
+  const bool directSound = false;
+#endif
+  const uint32_t minBuffer = directSound ? kMinDirectSoundBuffer : 0;
+
+  if (mState.mBufferSize < minBuffer)
+    mState.mBufferSize = minBuffer;
+
+  SendDlgItemMessage(hwndDlg,IDC_COMBO_AUDIO_BUF_SIZE,CB_RESETCONTENT,0,0);
+
   for (int i = 0; i< kNumBufferSizeOptions; i++)
   {
-    SendDlgItemMessage(hwndDlg,IDC_COMBO_AUDIO_BUF_SIZE,CB_ADDSTRING,0,(LPARAM)kBufferSizeOptions[i].c_str());
+    if ((uint32_t) atoi(kBufferSizeOptions[i].c_str()) >= minBuffer)
+      SendDlgItemMessage(hwndDlg,IDC_COMBO_AUDIO_BUF_SIZE,CB_ADDSTRING,0,(LPARAM)kBufferSizeOptions[i].c_str());
   }
+
+#ifdef OS_WIN
+  if (HWND note = GetDlgItem(hwndDlg, kIDC_DirectSoundNote))
+    ShowWindow(note, directSound ? SW_SHOW : SW_HIDE);
+#endif
   
   WDL_String str;
   str.SetFormatted(32, "%i", mState.mBufferSize);
@@ -274,6 +295,16 @@ void IPlugAPPHost::PopulatePreferencesDialog(HWND hwndDlg)
   SendDlgItemMessage(hwndDlg,IDC_COMBO_AUDIO_DRIVER,CB_ADDSTRING,0,(LPARAM)"DirectSound");
   SendDlgItemMessage(hwndDlg,IDC_COMBO_AUDIO_DRIVER,CB_ADDSTRING,0,(LPARAM)"ASIO");
   SendDlgItemMessage(hwndDlg,IDC_COMBO_AUDIO_DRIVER,CB_SETCURSEL, mState.mAudioDriverType, 0);
+
+  // riite: the DirectSound note (PopulateAudioDialogs shows it), in the stock dialog's empty
+  // space under "Buffer Size" and above "Sampling Rate", in dialog units.
+  RECT noteRect { 135, 50, 211, 83 };
+  MapDialogRect(hwndDlg, &noteRect);
+  HWND note = CreateWindowExW(0, L"STATIC", L"DirectSound needs 512 or more. Choose ASIO for a smaller buffer.",
+                              WS_CHILD | SS_LEFT, noteRect.left, noteRect.top, noteRect.right - noteRect.left,
+                              noteRect.bottom - noteRect.top, hwndDlg, (HMENU) (INT_PTR) kIDC_DirectSoundNote, gHINSTANCE, nullptr);
+  if (note)
+    SendMessage(note, WM_SETFONT, (WPARAM) SendMessage(hwndDlg, WM_GETFONT, 0, 0), FALSE);
 
   PopulateAudioDialogs(hwndDlg);
   PopulateMidiDialogs(hwndDlg);
@@ -453,7 +484,13 @@ WDL_DLGRET IPlugAPPHost::PreferencesDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wPar
           if (HIWORD(wParam) == CBN_SELCHANGE)
           {
             int iovsidx = (int) SendDlgItemMessage(hwndDlg, IDC_COMBO_AUDIO_BUF_SIZE, CB_GETCURSEL, 0, 0);
-            mState.mBufferSize = atoi(kBufferSizeOptions[iovsidx].c_str());
+            // riite: the list can start above kBufferSizeOptions[0], so read the chosen text
+            char sizeText[32] = {};
+            if (iovsidx >= 0 && SendDlgItemMessage(hwndDlg, IDC_COMBO_AUDIO_BUF_SIZE, CB_GETLBTEXTLEN, iovsidx, 0) < (LRESULT) sizeof sizeText)
+            {
+              SendDlgItemMessage(hwndDlg, IDC_COMBO_AUDIO_BUF_SIZE, CB_GETLBTEXT, iovsidx, (LPARAM) sizeText);
+              mState.mBufferSize = atoi(sizeText);
+            }
           }
           break;
         case IDC_COMBO_AUDIO_SR:
